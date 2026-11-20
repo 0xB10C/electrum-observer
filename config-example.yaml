@@ -111,5 +111,5 @@ tor:
 
 log:
   level: info
-  # Per-target overrides, as target: level. Targets: main, store.
+  # Per-target overrides, as target: level. Targets: main, store, jsonrpc.
   targets: {}

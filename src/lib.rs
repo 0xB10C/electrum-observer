@@ -11,6 +11,7 @@
 
 pub mod endpoint;
 pub mod fdlimit;
+pub mod jsonrpc;
 pub mod logging;
 pub mod settings;
 pub mod shutdown;
@@ -42,3 +43,11 @@ pub const TARGET_MAIN: &str = "main";
 /// constraint refused -- and an operator chasing a database problem wants
 /// `store: debug` without 450 sessions talking at the same time.
 pub const TARGET_STORE: &str = "store";
+
+/// The JSON-RPC client: what came back that nobody was waiting for.
+///
+/// Turned up (`jsonrpc: debug`) it names the answers that matched no pending
+/// request and the lines that were not JSON at all -- the two things a server
+/// can do that are neither an answer nor a disconnection, and that a session
+/// otherwise never sees.
+pub const TARGET_JSONRPC: &str = "jsonrpc";

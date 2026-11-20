@@ -32,6 +32,10 @@ serde = { version = "1", features = ["derive"] }
 # peer features are all stored as JSON text, and the content address of a
 # result is the sha256 of exactly that text, so the serialiser is part of
 # the data model and not a test convenience.
+# It is also the wire format: `Value` rather than typed messages, because
+# what a server answers is kept verbatim for comparison across servers
+# (DESIGN.md section 6), and a type that only admits what the protocol
+# documents would normalise away the differences this tool exists to record.
 serde_json = "1"
 # The configuration file itself. serde_yaml rather than the `config` crate
 # crawler uses: there is one source and no layering, and a plain
@@ -44,6 +48,7 @@ sha2 = "0.10"
 # runtime itself is built by hand in `main`, but `#[tokio::test]` and the
 # bounded waits in `shutdown` need them.
 tokio = { version = "1", features = [
+  "io-util",
   "macros",
   "rt-multi-thread",
   "signal",
@@ -60,6 +65,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 # `start_paused`, so that the store's flush interval is tested by advancing
 # the clock rather than by sleeping through it.
+# Also the request-timeout tests of `jsonrpc`. A dev-dependency and nothing
+# else: the feature replaces the clock, which is the last thing a collector
+# of timestamps should ship with.
 tokio = { version = "1", features = ["test-util"] }
 
 [features]
