@@ -18,6 +18,7 @@ pub mod jsonrpc;
 pub mod logging;
 pub mod probes;
 pub mod seeds;
+pub mod session;
 pub mod settings;
 pub mod shutdown;
 pub mod store;
@@ -95,3 +96,17 @@ pub const TARGET_PROBES: &str = "probes";
 /// which is the level to run at when a peer list yields fewer servers than
 /// it should.
 pub const TARGET_DISCOVERY: &str = "discovery";
+
+/// One connection's lifecycle: the handshake, the probes, the headers and
+/// the reconnect.
+///
+/// The target an operator actually watches: `session: info` is one line for
+/// every connection that comes up and one for every connection that ends,
+/// carrying the server, the endpoint, the session index and the
+/// `end_reason`, which together are the uptime of the whole collection as it
+/// happens. `session: debug` adds what each connection did in between --
+/// every header it was told about, every probe set that went out, every
+/// reconnect delay -- and against six hundred servers that is a great deal
+/// of it, which is why the two levels are separated here rather than sharing
+/// a target with the dial.
+pub const TARGET_SESSION: &str = "session";

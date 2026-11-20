@@ -75,6 +75,11 @@ use tracing::debug;
 
 use crate::TARGET_PROBES;
 use crate::jsonrpc::{Client, Error, RawCall, Response};
+// The two strings the fingerprint set's second `server.version` repeats are
+// the ones the handshake already sent (DESIGN.md section 5 step 2): the probe
+// is about the server's objection to being told twice, so they are taken from
+// the session rather than spelled out again here.
+use crate::session::{CLIENT_NAME, PROTOCOL_VERSION};
 use crate::store::{Event, Micros, PeerEdge};
 
 /// The confirmation targets every fee set asks `blockchain.estimatefee`
@@ -124,16 +129,6 @@ const ODD_ID: &str = "electrum-observer";
 /// The `pong_len` the fingerprint set passes to `server.ping`, which the
 /// protocol documents and most servers do not accept.
 const PONG_LEN: i64 = 8;
-
-/// What the fingerprint set's second `server.version` claims to be, which is
-/// what the handshake claimed (DESIGN.md section 5 step 2): the probe is
-/// about the server's objection to being told twice, so the strings are the
-/// ones it already accepted.
-const CLIENT_NAME: &str = concat!("electrum-observer/", env!("CARGO_PKG_VERSION"));
-
-/// The protocol version the handshake negotiated, repeated for the same
-/// reason.
-const PROTOCOL_VERSION: &str = "1.4";
 
 /// The key `probes.error` uses when there was no answer at all, rather than
 /// an answer this crate disliked.
