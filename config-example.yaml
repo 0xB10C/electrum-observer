@@ -87,7 +87,9 @@ discovery:
   max_servers: 600
 
 dns:
-  # Upstream resolver for hickory, as "host:port". null uses the system
+  # Upstream resolver for hickory, as "ip:port" or a bare "ip" for port 53.
+  # An address and not a name: a nameserver named by something only a
+  # nameserver could resolve has nothing to resolve it. null uses the system
   # resolver configuration. Every A and AAAA of every lookup is recorded
   # whichever is used.
   upstream: null

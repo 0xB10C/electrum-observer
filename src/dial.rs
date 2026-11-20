@@ -702,7 +702,7 @@ fn client_config() -> ClientConfig {
 
 /// The resolver these settings describe.
 ///
-/// `dns.upstream` is `host:port`, or a bare address for port 53. Hickory
+/// `dns.upstream` is `ip:port`, or a bare address for port 53. Hickory
 /// takes a nameserver as an IP address and not as a name, which is the only
 /// shape that can be resolved without a resolver to resolve it with.
 fn resolver(dns: &DnsSettings) -> Result<TokioResolver> {
