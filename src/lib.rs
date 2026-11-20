@@ -15,6 +15,7 @@ pub mod fdlimit;
 pub mod headers;
 pub mod jsonrpc;
 pub mod logging;
+pub mod probes;
 pub mod seeds;
 pub mod settings;
 pub mod shutdown;
@@ -72,3 +73,13 @@ pub const TARGET_DIAL: &str = "dial";
 /// had and how many of them were not endpoints, which is the question asked
 /// exactly when that page has changed shape.
 pub const TARGET_SEEDS: &str = "seeds";
+
+/// The probe sets: what a peer list was made of, beyond what the row keeps.
+///
+/// A probe answer is data and goes to the database rather than to the log,
+/// so this is quiet by design. What it does say (`probes: debug`) is how
+/// many of a `server.peers.subscribe` answer's rows were well formed and how
+/// many were skipped, which is the one thing the `peer_edges` rows cannot
+/// say about themselves: a server advertising fifty peers in a shape nobody
+/// else uses leaves no row behind at all.
+pub const TARGET_PROBES: &str = "probes";
