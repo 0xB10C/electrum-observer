@@ -33,3 +33,7 @@ tarpaulin-report.html
 # The symlink a `nix build` leaves behind
 result
 result-*
+
+# Local design notes and work order, kept next to the code but out of git
+DESIGN.md
+PLAN.md
