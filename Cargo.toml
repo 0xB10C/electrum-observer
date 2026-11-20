@@ -11,17 +11,35 @@ anyhow = "1"
 bitcoin = "0.32"
 # The CLI: a global --config and one subcommand per thing the binary does.
 clap = { version = "4", features = ["derive"] }
+# Hexadecimal for the content addresses: `blobs.sha256` keys a probe result
+# by the hash of its JSON text, and the same function hashes the
+# configuration file into `meta.config_sha256` (DESIGN.md section 4).
+hex = "0.4"
 # The descriptor limit, raised at startup because every monitored server
 # holds its connection open for the lifetime of the process (see `fdlimit`).
 libc = "0.2"
+# The database, which is the product of this daemon rather than a cache of
+# it (DESIGN.md section 4). `bundled` so that the file does not depend on
+# whichever SQLite the host carries: WAL and `ON CONFLICT` upserts are both
+# version-sensitive, and a collector that writes a different file on a
+# different machine is not one database.
+rusqlite = { version = "0.42", features = ["bundled"] }
 # `Endpoint` is serialised as its canonical string into the config file and
 # the database, so the derive belongs to the type itself and not only to the
 # settings module that reads it.
 serde = { version = "1", features = ["derive"] }
+# Probe results, resolved address lists, certificate SANs and advertised
+# peer features are all stored as JSON text, and the content address of a
+# result is the sha256 of exactly that text, so the serialiser is part of
+# the data model and not a test convenience.
+serde_json = "1"
 # The configuration file itself. serde_yaml rather than the `config` crate
 # crawler uses: there is one source and no layering, and a plain
 # deserialise is what makes `deny_unknown_fields` catch a typo.
 serde_yaml = "0.9"
+# The content addresses themselves. bitcoin's hashes would do the same
+# arithmetic, but those types are block hashes, and a fee histogram is not.
+sha2 = "0.10"
 # `macros` and `time` are for the tests as much as for the binary: the
 # runtime itself is built by hand in `main`, but `#[tokio::test]` and the
 # bounded waits in `shutdown` need them.
@@ -36,14 +54,13 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
-# A serde format to round trip `Endpoint` through in the tests. JSON
-# rather than the YAML the configuration uses, because what is tested is
-# that the value is one string in whatever format, and JSON says so in
-# one line.
-serde_json = "1"
-# Temporary directories for the settings tests that write a config file
-# and a server list.
+# Temporary directories for the settings tests, which write a config file
+# and a server list, and for the store tests, which want a real file: WAL
+# and the busy timeout are not observable on `:memory:`.
 tempfile = "3"
+# `start_paused`, so that the store's flush interval is tested by advancing
+# the clock rather than by sleeping through it.
+tokio = { version = "1", features = ["test-util"] }
 
 [features]
 # Turns checks that only warn into hard failures. Nothing reads it yet.

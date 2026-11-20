@@ -14,6 +14,7 @@ pub mod fdlimit;
 pub mod logging;
 pub mod settings;
 pub mod shutdown;
+pub mod store;
 
 pub use endpoint::{Endpoint, Host, Network, Transport};
 pub use settings::Settings;
@@ -33,3 +34,11 @@ pub use shutdown::Shutdown;
 /// Public, unlike crawler's, because here the binary logs too: it is what
 /// says the process started.
 pub const TARGET_MAIN: &str = "main";
+
+/// The database: the schema, the writer task and the few direct queries.
+///
+/// Its own target because what it logs is the shape of the collection rather
+/// than any one server -- a batch that could not be committed, a row a
+/// constraint refused -- and an operator chasing a database problem wants
+/// `store: debug` without 450 sessions talking at the same time.
+pub const TARGET_STORE: &str = "store";
