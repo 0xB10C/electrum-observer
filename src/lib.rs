@@ -15,6 +15,7 @@ pub mod fdlimit;
 pub mod headers;
 pub mod jsonrpc;
 pub mod logging;
+pub mod seeds;
 pub mod settings;
 pub mod shutdown;
 pub mod store;
@@ -63,3 +64,11 @@ pub const TARGET_JSONRPC: &str = "jsonrpc";
 /// how an operator tells "the server is gone" from "our resolver is". The
 /// certificate is named by its fingerprint and never by its bytes.
 pub const TARGET_DIAL: &str = "dial";
+
+/// The seed sources: what was read, from where, and what was not readable.
+///
+/// Its own target because an import is a command somebody is watching rather
+/// than a phase of a run: `seeds: debug` says how many rows the 1209k page
+/// had and how many of them were not endpoints, which is the question asked
+/// exactly when that page has changed shape.
+pub const TARGET_SEEDS: &str = "seeds";

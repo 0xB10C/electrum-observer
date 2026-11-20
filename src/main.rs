@@ -6,18 +6,25 @@
 //! library, so that the end-to-end tests can drive the collector in process
 //! against mock servers (DESIGN.md section 3).
 //!
-//! One subcommand so far. `run` sets everything up and returns, because
-//! `run()` itself arrives with step 14 of `PLAN.md`; `import` and `servers`
-//! arrive with the sources and the supervisor they report on, in steps 13 and
-//! 14.
+//! Three subcommands. `run` sets everything up and returns, because `run()`
+//! itself arrives with step 14 of `PLAN.md`; `import` fills the `servers`
+//! table from the sources of `seeds`, and `servers` prints what is in it.
+//!
+//! `import` and `servers` are the pair that makes an import checkable: one
+//! writes rows, the other says which rows are there and where each came from,
+//! in a shape that can be piped into `grep` and `cut` rather than into
+//! `sqlite3`. Both write their result to stdout and log to the subscriber, so
+//! a count never arrives mixed into a log line.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use electrum_observer::{Settings, Shutdown, TARGET_MAIN, fdlimit, logging};
-use tracing::info;
+use electrum_observer::store::Store;
+use electrum_observer::{Endpoint, Settings, Shutdown, TARGET_MAIN, fdlimit, logging, seeds};
+use tracing::{debug, info};
 
 /// The arguments that change per invocation. Everything else is in the
 /// configuration file (DESIGN.md section 8).
@@ -46,6 +53,38 @@ struct Cli {
 enum Command {
     /// Connect to every enabled server and collect until stopped.
     Run,
+
+    /// Add servers from a seed source to the database.
+    Import {
+        #[command(subcommand)]
+        source: Source,
+    },
+
+    /// Print every known server, one per line.
+    Servers,
+}
+
+/// Where an import reads its endpoints from (DESIGN.md section 3).
+///
+/// One subcommand per source rather than a `--from` with three values,
+/// because the file source takes a path and the others do not, and clap can
+/// say that for us.
+#[derive(Debug, Subcommand)]
+enum Source {
+    /// The server table at 1209k.com. Mainnet only, and the one command here
+    /// that touches the network.
+    #[command(name = "1209k")]
+    Table1209k,
+
+    /// The public servers Sparrow Wallet ships, for the configured chain.
+    Sparrow,
+
+    /// A file of endpoints, one per line, `#` for comments.
+    File {
+        /// The list to read. Either spelling: ssl://host:port or host:port:s.
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -53,14 +92,14 @@ fn main() -> ExitCode {
         Ok(cli) => cli,
         Err(error) => {
             // `--help` and `--version` arrive here too; they are not
-            // failures, and clap knows which stream each one belongs on.
-            let failed = error.use_stderr();
+            // failures, and clap knows which stream each one belongs on and
+            // which code the shell should see for each: 2 for a usage error,
+            // which is what every getopt-shaped tool returns and what a shell
+            // script tells from the 1 of a run that started and failed, and 0
+            // for the help it was asked to print.
             let _ = error.print();
-            return if failed {
-                ExitCode::FAILURE
-            } else {
-                ExitCode::SUCCESS
-            };
+            let code = u8::try_from(error.exit_code()).unwrap_or(2);
+            return ExitCode::from(code);
         }
     };
 
@@ -93,6 +132,8 @@ fn tokio_runtime() -> Result<tokio::runtime::Runtime> {
 async fn start(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Run => run(&cli.config).await,
+        Command::Import { source } => import(&cli.config, source),
+        Command::Servers => servers(&cli.config),
     }
 }
 
@@ -129,6 +170,108 @@ async fn run(config: &Path) -> Result<()> {
         max_servers = settings.discovery.max_servers,
         max_sessions = settings.max_sessions(),
         "electrum-observer starting"
+    );
+    Ok(())
+}
+
+/// `import`: read a seed source and write what it names into `servers`.
+///
+/// Blocking inside an async function on purpose: this is a command someone
+/// typed, there is nothing else on the runtime to starve, and the one request
+/// it may make is a single page fetch whose timeout is in `seeds`.
+///
+/// Nothing is capped. `discovery.max_servers` is about peer lists, which are
+/// unbounded and partly stale (DESIGN.md section 7); a seed list is what the
+/// operator asked to be watched, and a cap applied to it would silently
+/// disable the servers an experiment was set up for. Nothing is enabled again
+/// either: `upsert_server` returns an existing row untouched, so a server
+/// disabled by hand stays disabled through the next import.
+fn import(config: &Path, source: Source) -> Result<()> {
+    let settings = Settings::load(config)?;
+    logging::init(&settings.log)?;
+
+    // `skipped` is the source's own: rows of the 1209k table whose host, port
+    // and transport were not an endpoint. A file has none, because a line
+    // that is not an endpoint fails the import rather than being dropped, and
+    // the built-in list has none by construction.
+    let (name, endpoints, skipped): (&str, Vec<Endpoint>, usize) = match source {
+        Source::Table1209k => {
+            let html = seeds::fetch_1209k(settings.chain)?;
+            let table = seeds::parse_1209k_table(&html)?;
+            let endpoints = table.rows.into_iter().map(|row| row.endpoint).collect();
+            (seeds::SOURCE_1209K, endpoints, table.skipped)
+        }
+        Source::Sparrow => (seeds::SOURCE_SPARROW, seeds::sparrow(settings.chain), 0),
+        Source::File { path } => (seeds::SOURCE_FILE, seeds::from_file(&path)?, 0),
+    };
+
+    let store = Store::open(&settings.database)?;
+    // The ids that existed before this import, so that "added" is what this
+    // command inserted and not what the source happened to name. An endpoint
+    // a source lists twice is counted once as added and once as known, which
+    // is what it is.
+    let mut known_ids: HashSet<i64> = store
+        .servers()
+        .context("reading the known servers")?
+        .into_iter()
+        .map(|row| row.id)
+        .collect();
+
+    let mut added = 0usize;
+    let mut known = 0usize;
+    for endpoint in &endpoints {
+        let row = store
+            .upsert_server(endpoint, name, None)
+            .with_context(|| format!("adding {endpoint}"))?;
+        if known_ids.insert(row.id) {
+            added += 1;
+        } else {
+            known += 1;
+        }
+    }
+
+    debug!(
+        target: TARGET_MAIN,
+        source = name,
+        database = %settings.database.display(),
+        added,
+        known,
+        skipped,
+        "import finished",
+    );
+    println!("added {added}, already known {known}, skipped {skipped}");
+    Ok(())
+}
+
+/// `servers`: one line per row of the `servers` table.
+///
+/// Tab separated and in no one's idea of a table layout, because what this
+/// output is for is `grep`, `cut` and `wc -l`: which servers an import added,
+/// which source named a host, which rows are disabled and why. The columns
+/// are the ones DESIGN.md section 4 says identify and gate a server, in that
+/// order, and a column with nothing in it is a `-` rather than an empty field
+/// so that every line has the same number of fields.
+fn servers(config: &Path) -> Result<()> {
+    let settings = Settings::load(config)?;
+    logging::init(&settings.log)?;
+
+    let store = Store::open(&settings.database)?;
+    let rows = store.servers().context("reading the known servers")?;
+    for row in &rows {
+        let state = if row.enabled { "enabled" } else { "disabled" };
+        let reason = row.disabled_reason.as_deref().unwrap_or("-");
+        println!(
+            "{id}\t{endpoint}\t{source}\t{state}\t{reason}",
+            id = row.id,
+            endpoint = row.endpoint,
+            source = row.source,
+        );
+    }
+    debug!(
+        target: TARGET_MAIN,
+        database = %settings.database.display(),
+        servers = rows.len(),
+        "servers listed",
     );
     Ok(())
 }

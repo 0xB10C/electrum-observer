@@ -91,6 +91,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # a certificate this cannot read is still recorded by its hash and its bytes,
 # because recording is the job (DESIGN.md section 4).
 x509-parser = "0.18"
+# The one HTTP request this crate makes: the 1209k server table, fetched by
+# `import 1209k` (DESIGN.md section 3). Blocking, which is what that
+# subcommand is, and small enough that a second TLS stack is not worth
+# avoiding; rustls rather than the default features, as in crawler, so that
+# no build of this depends on the host's OpenSSL.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 # A self-signed certificate for the TLS tests, generated in the test rather
