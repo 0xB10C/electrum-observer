@@ -1,11 +1,10 @@
 //! One connection to one server: the handshake, the probes, the headers, and
 //! the reconnect after it ends.
 //!
-//! This is DESIGN.md section 5 written down. A session owns everything it
-//! writes -- its `connections` row and every `header_events`, `pings`,
-//! `probes` and `tip_checks` row that names it -- and it is the only part of
-//! the collector that talks to a server, so the order of what it does is the
-//! order the design prescribes and not an implementation detail:
+//! A session owns everything it writes -- its `connections` row and every
+//! `header_events`, `pings`, `probes` and `tip_checks` row that names it --
+//! and it is the only part of the collector that talks to a server, so the
+//! order of what it does is deliberate and not an implementation detail:
 //!
 //! 1. the dial, recorded whether or not it succeeds;
 //! 2. `server.version`, which ElectrumX requires to be the first message on
@@ -23,8 +22,8 @@
 //! is which of a server's `sessions_per_server` connections this is, and
 //! only index 0 probes: the others exist to measure the floor two
 //! connections to one endpoint put under every cross-server delta (thread
-//! #167, DESIGN.md section 5), and a probe set sent down them would cost a
-//! server twice for data that is already collected.
+//! #167), and a probe set sent down them would cost a server twice for data
+//! that is already collected.
 //!
 //! **Nothing here takes a measurement's timestamp.** Every `at` is the
 //! `received_at` the JSON-RPC client stamped as the last byte of the line
@@ -55,10 +54,10 @@
 //! to `reconnect.max_secs`, with plus or minus 20 % jitter. The jitter is the
 //! point of the whole scheme: without it a restart makes every session
 //! reconnect in lockstep and the first-seen timings of the next few blocks
-//! measure our own scheduler (DESIGN.md section 5 step 7). The backoff resets
-//! to the minimum after a connection that lasted longer than
-//! [`LONG_CONNECTION`], so a server that is up for a day and then restarts is
-//! retried promptly rather than at whatever ceiling a bad week left behind.
+//! measure our own scheduler. The backoff resets to the minimum after a
+//! connection that lasted longer than [`LONG_CONNECTION`], so a server that
+//! is up for a day and then restarts is retried promptly rather than at
+//! whatever ceiling a bad week left behind.
 //!
 //! The first fee and fingerprint sets are staggered the same way, by a random
 //! fraction of their own cadence, so that six hundred sessions established in
@@ -88,9 +87,9 @@ use crate::store::{Event, HeaderKind, Micros, ServerRow, Store, StoreWriter};
 /// What this client calls itself in `server.version`, which is what the
 /// servers' own logs will show.
 ///
-/// The fingerprint set's second `server.version` repeats these two strings
-/// (DESIGN.md section 6), so they live here, beside the handshake that first
-/// sent them, rather than in two places that could drift apart.
+/// The fingerprint set's second `server.version` repeats these two strings,
+/// so they live here, beside the handshake that first sent them, rather than
+/// in two places that could drift apart.
 pub const CLIENT_NAME: &str = concat!("electrum-observer/", env!("CARGO_PKG_VERSION"));
 
 /// The protocol version the handshake asks for. 1.4 is what every server this
@@ -130,10 +129,10 @@ pub const END_PING_FAILED: &str = "ping_failed";
 
 /// `server.features` named another chain's genesis hash. The server is
 /// disabled with the same word in `servers.disabled_reason` and this session
-/// does not come back (DESIGN.md section 5 step 3).
+/// does not come back.
 pub const END_GENESIS_MISMATCH: &str = "genesis_mismatch";
 
-/// The initial probe set of DESIGN.md section 6, in the order it is asked.
+/// The initial probe set, in the order it is asked.
 ///
 /// The identity set plus `blockchain.relayfee` and `mempool.get_info`: a
 /// connection starts with one of everything slow-moving, so that a server
@@ -192,7 +191,7 @@ pub struct SessionContext {
     /// `None` is a session that discovers nothing -- the peer list is still
     /// probed, still stored and still turned into `peer_edges`, because the
     /// advertisement graph is data whether or not anything is dialed because
-    /// of it (DESIGN.md section 7).
+    /// of it.
     pub peers_tx: Option<mpsc::Sender<(i64, Vec<AdvertisedPeer>)>>,
 }
 
@@ -274,9 +273,9 @@ pub async fn run_session(
 /// One connection, from the id it will be written under to the row that says
 /// it is over.
 ///
-/// The one place `ConnectionEnded` is written, so that the "exactly one per
-/// `ConnectionStarted`" of DESIGN.md section 4 is a property of the control
-/// flow rather than a rule every error path has to remember.
+/// The one place `ConnectionEnded` is written, so that exactly one of them
+/// per `ConnectionStarted` is a property of the control flow rather than a
+/// rule every error path has to remember.
 async fn connect_once(
     ctx: &SessionContext,
     server: &ServerRow,
@@ -473,8 +472,7 @@ struct Connection<'a> {
     /// this server on", and a reconnect is a new answer to it. Within one
     /// connection it is asked once per height, because a divergence is
     /// reported on every announcement that lands inside the window and the
-    /// answer does not change between two of them (DESIGN.md section 5 step
-    /// 6).
+    /// answer does not change between two of them.
     coinbases: HashSet<u64>,
 }
 
@@ -517,10 +515,10 @@ impl Connection<'_> {
     ///
     /// A server on another chain is disabled rather than ignored: its headers
     /// would otherwise go into the cross-server block book and every query
-    /// over `blocks` would have to know which rows to leave out (DESIGN.md
-    /// section 5 step 3). A `features` answer that failed, or that has no
-    /// `genesis_hash` at all, is not a mismatch -- it is a server that did
-    /// not say, and nothing is concluded from silence.
+    /// over `blocks` would have to know which rows to leave out. A `features`
+    /// answer that failed, or that has no `genesis_hash` at all, is not a
+    /// mismatch -- it is a server that did not say, and nothing is concluded
+    /// from silence.
     async fn check_genesis(&self, features: Option<&Value>) -> Option<Ended> {
         let announced = features?.get("genesis_hash")?.as_str()?;
         let expected = self.ctx.settings.chain.genesis_hash().to_string();
@@ -672,7 +670,7 @@ impl Connection<'_> {
     /// One header a server told us about, however it told us.
     ///
     /// `at` is the arrival stamp of the line it came in and nothing else:
-    /// this is the measurement of DESIGN.md section 1, and a timestamp taken
+    /// this is the measurement this crate exists for, and a timestamp taken
     /// here would be the measurement of this function's own scheduling.
     async fn record_header(&mut self, kind: HeaderKind, value: &Value, at: SystemTime) {
         let announcement = match Announcement::from_value(value) {
@@ -779,7 +777,7 @@ impl Connection<'_> {
         }
     }
 
-    /// The divergence poll of DESIGN.md section 5 step 6.
+    /// The divergence poll, once per open window and height.
     ///
     /// Every session polls, the noise-floor ones included: a subscription
     /// says when a server *announces* a tip, and only this says when it

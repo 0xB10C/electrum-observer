@@ -5,9 +5,6 @@
 //! discovery, sessions, probes and the store is only exercised by starting
 //! it, and a unit test of any one part cannot see a channel plugged into the
 //! wrong end.
-//!
-//! `DESIGN.md` is the authority on behaviour -- what is collected, why, and
-//! into which table -- and `PLAN.md` is the order the modules arrive in.
 
 pub mod dial;
 pub mod discovery;

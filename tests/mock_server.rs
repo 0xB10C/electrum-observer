@@ -1,13 +1,12 @@
 //! The mock Electrum server, exercised through the client that will use it.
 //!
 //! The harness of `tests/common/mock_server.rs` is the foundation of every
-//! integration test from step 7 of `PLAN.md` onwards, which means a bug in it
-//! would show up as a failure somewhere else entirely -- a session test that
-//! fails because the server never sent the notification, not because the
-//! session missed it. So it is tested the way it will be used: over a real
-//! TCP socket, through `electrum_observer::jsonrpc::Client`, asserting on
-//! what the client makes of the answers rather than on the harness's own
-//! internals.
+//! integration test, which means a bug in it would show up as a failure
+//! somewhere else entirely -- a session test that fails because the server
+//! never sent the notification, not because the session missed it. So it is
+//! tested the way it will be used: over a real TCP socket, through
+//! `electrum_observer::jsonrpc::Client`, asserting on what the client makes
+//! of the answers rather than on the harness's own internals.
 //!
 //! That also makes these tests the first end-to-end exercise of the client
 //! against a socket instead of a `duplex` pipe, which is where a framing
@@ -294,8 +293,8 @@ async fn require_version_first_refuses_both_ways() {
     assert_eq!(message, "server.version already sent");
 }
 
-/// The errors a server answers rather than failing on, which DESIGN.md
-/// section 6 collects as data.
+/// The errors a server answers rather than failing on, which the fingerprint
+/// set collects as data.
 #[tokio::test]
 async fn errors_are_answers() {
     let server = MockServer::start(Behaviour::default()).await;
@@ -474,7 +473,7 @@ async fn a_batch_is_answered_or_refused() {
 ///
 /// This is the assertion surface for every later test about *what a session
 /// asks and when*: the handshake first, the initial probe set, the
-/// subscription (DESIGN.md section 5).
+/// subscription.
 #[tokio::test]
 async fn requests_records_what_was_sent() {
     let server = MockServer::start(Behaviour::default()).await;
@@ -540,7 +539,7 @@ async fn disconnect_all_closes_the_client() {
     );
 
     // The listener is still up, so a session can reconnect to the same
-    // address -- which is what the backoff test of step 10 needs.
+    // address -- which is what the session backoff test needs.
     let (again, _notifications) = connect(&server).await;
     assert_eq!(ask(&again, "server.ping", json!([])).await, Value::Null);
     assert_eq!(server.connection_count(), 1);
@@ -584,7 +583,7 @@ async fn shutdown_stops_the_listener() {
 ///
 /// The builders exist so that a test which cares about one server among
 /// several -- two mock servers, one announcing a fork, as the end-to-end test
-/// of step 14 runs -- can say what makes them different and nothing else.
+/// runs -- can say what makes them different and nothing else.
 #[tokio::test]
 async fn a_behaviour_can_be_built_to_order() {
     // A server that has the genesis block and nothing after it: a real state
@@ -625,8 +624,8 @@ async fn a_behaviour_can_be_built_to_order() {
         json!({ "data": "" }),
     );
 
-    // Two of the fingerprint probes of DESIGN.md section 6: a height passed
-    // as a string, and a call with the wrong number of parameters.
+    // Two of the fingerprint probes: a height passed as a string, and a call
+    // with the wrong number of parameters.
     let (code, message) = ask_err(&client, "blockchain.block.header", json!(["0"])).await;
     assert_eq!(code, Some(-32602));
     assert_eq!(message, "invalid parameters: expected a height");
@@ -640,9 +639,8 @@ async fn a_behaviour_can_be_built_to_order() {
 
 /// A server can change its mind while a session is connected.
 ///
-/// Which is the whole reason for the identity set of DESIGN.md section 6: a
-/// banner edit is slow-moving data, and a test of it needs a server whose
-/// banner moves.
+/// Which is the whole reason for the identity set: a banner edit is
+/// slow-moving data, and a test of it needs a server whose banner moves.
 #[tokio::test]
 async fn set_behaviour_changes_the_answers_mid_connection() {
     let server = MockServer::start(Behaviour::default()).await;

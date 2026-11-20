@@ -4,8 +4,8 @@
 # file is what the daemon does when it is handed an empty one. A key the
 # daemon does not know is an error rather than a line that is ignored.
 #
-# Durations are whole seconds. DESIGN.md is the authority on what each of
-# these decides.
+# Durations are whole seconds. The comment above each key says what it
+# decides; the module documentation of the crate has the detail.
 
 # Which chain the servers are expected to be on. Decides the genesis hash
 # `server.features` is checked against: a server on another chain is disabled

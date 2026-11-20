@@ -38,7 +38,7 @@ let
   # dynamic user before the service starts. Everything the daemon writes is
   # under it: the SQLite database with its WAL sidecars, and arti's state,
   # which `tor.state_dir = null` puts at `<database dir>/arti` -- one state
-  # directory for both, as DESIGN.md section 8 says.
+  # directory for both.
   stateDirectory = "electrum-observer";
   stateDir = "/var/lib/${stateDirectory}";
 

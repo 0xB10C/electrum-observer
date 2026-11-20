@@ -10,8 +10,8 @@
 //! its own index with it.
 //!
 //! So these drive `probes::run` against the mock Electrum server of
-//! `tests/common/mock_server.rs`, which answers the methods of DESIGN.md
-//! section 6 and can be told to refuse or ignore any one of them.
+//! `tests/common/mock_server.rs`, which answers every method the probe sets
+//! send and can be told to refuse or ignore any one of them.
 
 mod common;
 
@@ -141,7 +141,7 @@ fn row(result: &ProbeResult) -> Row<'_> {
 /// Every kind that is one request stores the answer as it arrived, bare: an
 /// analysis asking "did these two servers answer the same thing" compares
 /// `blobs` rows, and a `server.features` object wrapped in an array would
-/// only be equal to another wrapped one (DESIGN.md section 4).
+/// only be equal to another wrapped one.
 #[tokio::test]
 async fn a_single_request_kind_stores_the_bare_answer() {
     let behaviour = Behaviour::default();
@@ -177,9 +177,9 @@ async fn a_single_request_kind_stores_the_bare_answer() {
     }
 }
 
-/// The probe DESIGN.md section 5 step 6 fires once per branch while a
-/// divergence window is open: the coinbase of the block a server is on
-/// identifies the branch after it has been orphaned.
+/// The probe a session fires once per branch while a divergence window is
+/// open: the coinbase of the block a server is on identifies the branch after
+/// it has been orphaned.
 #[tokio::test]
 async fn the_coinbase_probe_asks_about_the_height_it_was_given() {
     let (server, result) = probe_with(
@@ -268,9 +268,9 @@ async fn estimatefee_asks_every_target_in_one_row() {
     );
 }
 
-/// The nine requests of DESIGN.md section 6 reach the server as the set
-/// describes them, batch included -- the harness records a batch as one
-/// entry per member, so ten entries for nine requests.
+/// The nine requests of the fingerprint set reach the server as the set
+/// describes them, batch included -- the harness records a batch as one entry
+/// per member, so ten entries for nine requests.
 #[tokio::test]
 async fn the_fingerprint_set_sends_what_it_says_it_sends() {
     let (server, _result) = probe(Behaviour::default(), ProbeKind::Fingerprint).await;
@@ -428,8 +428,8 @@ async fn the_fingerprint_set_records_an_already_handshaked_version() {
     assert_eq!(row.result_at(8), &Value::Null);
 }
 
-/// The advertisement graph of DESIGN.md section 4, out of the same answer
-/// the row keeps whole.
+/// The advertisement graph in `peer_edges`, out of the same answer the row
+/// keeps whole.
 #[tokio::test]
 async fn a_peer_list_becomes_edges_beside_the_row() {
     let (_server, result) = probe(Behaviour::default(), ProbeKind::Peers).await;
@@ -499,7 +499,7 @@ async fn no_other_kind_produces_edges() {
 }
 
 /// A connection that is gone is recorded, not raised: what a dead socket
-/// means is the session's decision (DESIGN.md section 5 step 7).
+/// means is the session's decision.
 #[tokio::test]
 async fn a_closed_connection_is_a_row_rather_than_a_failure() {
     let server = MockServer::start(Behaviour::default()).await;

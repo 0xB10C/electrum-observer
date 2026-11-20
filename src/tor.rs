@@ -11,12 +11,12 @@
 //! with one guard set is both enough and the quieter thing to be. What is
 //! added is [`TorHandle::clearnet_dialer`], for `tor.route_clearnet`.
 //!
-//! **A failed bootstrap is not a failed run** (DESIGN.md section 9). Onion
-//! sessions wait for Tor; clearnet sessions do not and start immediately, so
-//! a host that cannot reach the Tor network still collects everything the
-//! clearnet servers say. The reason is kept and logged rather than returned,
-//! which is why [`bootstrap`] has no `Result`: there is nothing a caller
-//! could usefully do with it that is not "carry on without onion servers".
+//! **A failed bootstrap is not a failed run.** Onion sessions wait for Tor;
+//! clearnet sessions do not and start immediately, so a host that cannot
+//! reach the Tor network still collects everything the clearnet servers say.
+//! The reason is kept and logged rather than returned, which is why
+//! [`bootstrap`] has no `Result`: there is nothing a caller could usefully do
+//! with it that is not "carry on without onion servers".
 //!
 //! The exception is `tor.route_clearnet`. That setting exists so that the
 //! servers being watched cannot trivially identify the observer, and a run
@@ -123,7 +123,7 @@ impl TorHandle {
     /// does. The exit does the connecting and, for a hostname, the resolving,
     /// so the `connections` row has no `remote_ip` and there is no
     /// `dns_resolutions` row at all -- which is why the setting costs
-    /// something besides latency and is off by default (DESIGN.md section 9).
+    /// something besides latency and is off by default.
     pub fn clearnet_dialer(&self) -> OnionDialer {
         self.dialer(Route::Clearnet)
     }
@@ -213,11 +213,10 @@ impl TorState {
 ///
 /// The wait is bounded because a host that cannot reach the Tor network must
 /// still collect from the clearnet servers: on expiry Tor is switched off for
-/// the run rather than the run failing (DESIGN.md section 9,
-/// `tor.bootstrap_timeout_secs`). Every way this can go wrong -- a state
-/// directory that cannot be made, a configuration arti refuses, a lock it
-/// cannot take, a directory it cannot fetch -- ends the same way, with the
-/// reason kept for the log.
+/// the run rather than the run failing, within `tor.bootstrap_timeout_secs`.
+/// Every way this can go wrong -- a state directory that cannot be made, a
+/// configuration arti refuses, a lock it cannot take, a directory it cannot
+/// fetch -- ends the same way, with the reason kept for the log.
 ///
 /// Called once per process. Two clients would mean two guard sets and two
 /// directory fetches for a daemon whose onion connections are opened once and
@@ -338,7 +337,7 @@ async fn start(state_dir: &Path) -> Result<TorHandle, String> {
 ///
 /// Two directories under the one `tor.state_dir` of the configuration file,
 /// so that the daemon's whole arti footprint is the one path an operator
-/// named and a NixOS `StateDirectory` covers it (DESIGN.md section 8).
+/// named and a NixOS `StateDirectory` covers it.
 struct Layout {
     /// `tor.state_dir` itself, kept rather than derived from the two below:
     /// it is what the operator wrote and so what a failure has to name, and
@@ -574,7 +573,7 @@ mod tests {
 
     /// The state directory is `<tor.state_dir>/state` and the cache
     /// `<tor.state_dir>/cache`, both made if missing, so that one path in the
-    /// configuration file is arti's whole footprint (DESIGN.md section 8).
+    /// configuration file is arti's whole footprint.
     #[test]
     fn the_layout_is_state_and_cache_under_the_one_directory() {
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -770,14 +769,12 @@ mod tests {
     /// offline is a test that gets switched off while it is right.
     ///
     /// The target is the Tor Project's own onion service and not an Electrum
-    /// server, because no onion Electrum address is in this tree yet -- the
-    /// 1209k list arrives with its fixture in step 13 of PLAN.md, and an
-    /// address typed in from memory is a test that fails for the wrong
-    /// reason. What this module has to prove is that the bootstrap, the
-    /// descriptor fetch and the rendezvous really work and that the stream
-    /// that comes back is the seam's; which Electrum server is at the far end
-    /// is the session tests' business. Point it at one by editing the
-    /// endpoint when the fixture lands.
+    /// server, because an address typed in from memory is a test that fails
+    /// for the wrong reason. What this module has to prove is that the
+    /// bootstrap, the descriptor fetch and the rendezvous really work and
+    /// that the stream that comes back is the seam's; which Electrum server
+    /// is at the far end is the session tests' business. Point it at an onion
+    /// server from the 1209k fixture by editing the endpoint.
     #[tokio::test]
     #[ignore = "needs the tor network, run by hand with --ignored"]
     async fn tor_really_bootstraps_and_opens_a_circuit() {

@@ -6,7 +6,7 @@
 //! -- and it is the way the list of monitored servers grows without anybody
 //! maintaining one: a peer that is new becomes a `servers` row with
 //! `source = 'peers:<id>'` and, if there is room under the cap, a session of
-//! its own (DESIGN.md section 7).
+//! its own.
 //!
 //! The reply is an array of three-element rows, `[ip, host, [features]]`,
 //! as the protocol documentation's example has it:
@@ -24,10 +24,10 @@
 //! and 50001. A server on another chain advertising a bare `s` is then read
 //! as mainnet's port and will not connect -- which is a wrong address in the
 //! database rather than a wrong number in a measurement, and it is already
-//! disabled by the genesis check of DESIGN.md section 5 step 3.
+//! disabled by the genesis check the handshake makes.
 //!
-//! Two decisions from DESIGN.md section 7 are worth repeating because they
-//! look like oversights otherwise:
+//! Two decisions here are worth repeating because they look like oversights
+//! otherwise:
 //!
 //! - **Both ports of one host are kept.** The TCP and the SSL port of one
 //!   hostname are certainly one backend, so whatever first-seen delta they
@@ -65,11 +65,11 @@ pub const DEFAULT_SSL_PORT: u16 = 50002;
 /// One row of a `server.peers.subscribe` reply, as it was advertised.
 ///
 /// Kept close to the wire -- the features are the strings the server sent,
-/// not a parsed set -- because this is also what `peer_edges` stores
-/// (DESIGN.md section 4): what one server said about another is the datum,
-/// and a normalised version of it would answer a different question later.
-/// The `ip` is `None` when the field was absent, empty or not an address,
-/// which is the ordinary case for an onion peer.
+/// not a parsed set -- because this is also what `peer_edges` stores: what
+/// one server said about another is the datum, and a normalised version of it
+/// would answer a different question later. The `ip` is `None` when the field
+/// was absent, empty or not an address, which is the ordinary case for an
+/// onion peer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdvertisedPeer {
     /// The address the advertising server has for this peer, when it gave a
@@ -156,11 +156,11 @@ impl AdvertisedPeer {
     /// at all, which is how a row whose host column is junk still yields the
     /// machine it was about.
     ///
-    /// Onion hosts are returned only when Tor is enabled (DESIGN.md section
-    /// 9), and never fall back to the `ip` field: whatever address a server
-    /// prints beside an onion name, it is not a second way to reach that
-    /// service. A v2 onion address is refused by [`Endpoint`] itself,
-    /// because the Tor network stopped routing to v2 in 2021.
+    /// Onion hosts are returned only when Tor is enabled, and never fall back
+    /// to the `ip` field: whatever address a server prints beside an onion
+    /// name, it is not a second way to reach that service. A v2 onion address
+    /// is refused by [`Endpoint`] itself, because the Tor network stopped
+    /// routing to v2 in 2021.
     pub fn endpoints(&self, tor_enabled: bool) -> Vec<Endpoint> {
         let hosts = self.hosts(tor_enabled);
         let mut endpoints: Vec<Endpoint> = Vec::new();
@@ -288,9 +288,9 @@ pub struct Discovery {
 }
 
 impl Discovery {
-    /// Takes the two settings that decide what discovery may keep:
-    /// `discovery` (DESIGN.md section 8) and whether Tor is available for
-    /// the onion peers.
+    /// Takes the two settings that decide what discovery may keep: the
+    /// `discovery` configuration and whether Tor is available for the onion
+    /// peers.
     pub fn new(store: Store, discovery: &DiscoverySettings, tor_enabled: bool) -> Self {
         Self {
             store,
@@ -476,8 +476,8 @@ mod tests {
         assert_eq!(
             endpoints,
             [
-                // Both transports of one host: the positive control of
-                // DESIGN.md section 7, kept on purpose.
+                // Both transports of one host: the positive control, kept on
+                // purpose.
                 "ssl://tool.sh:50002",
                 "tcp://tool.sh:50001",
                 "ssl://bitcoin.grey.pw:50002",

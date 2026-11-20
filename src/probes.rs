@@ -1,19 +1,19 @@
 //! What a server is asked all at once, and what one row is made of the
 //! answers.
 //!
-//! DESIGN.md section 6 groups the questions into *sets*: a handful of
-//! requests that go out together, because what is compared across servers is
-//! a set asked at one moment, and because one row per set keeps `probes` an
-//! order of magnitude smaller than one row per request. This module is that
-//! list of sets, the requests in each of them, and the encoding of a set's
-//! answers into the single [`Event::Probe`] the writer task expects.
+//! The questions are grouped into *sets*: a handful of requests that go out
+//! together, because what is compared across servers is a set asked at one
+//! moment, and because one row per set keeps `probes` an order of magnitude
+//! smaller than one row per request. This module is that list of sets, the
+//! requests in each of them, and the encoding of a set's answers into the
+//! single [`Event::Probe`] the writer task expects.
 //!
 //! It owns no clock beyond the stamps the client hands back, no socket of
 //! its own and no timer: [`run`] is given a connected [`Client`] and the ids
 //! the session already chose, and the cadences that decide *when* a set runs
-//! belong to the session (DESIGN.md section 5 step 5). What it does own is
-//! the question of what a probe row means, which is the part an analysis
-//! query a year from now has to be able to trust.
+//! belong to the session. What it does own is the question of what a probe
+//! row means, which is the part an analysis query a year from now has to be
+//! able to trust.
 //!
 //! # The encoding
 //!
@@ -29,12 +29,11 @@
 //!   the array of its members' parameters.
 //! - **`result`** is the bare answer for a set of one request -- so that
 //!   `blobs` equality across servers compares a `server.features` object
-//!   with a `server.features` object, which is the comparison DESIGN.md
-//!   section 4 keeps the blob table for -- and, for a set of several
-//!   ([`ProbeKind::Estimatefee`] and [`ProbeKind::Fingerprint`]), an array
-//!   aligned with `params` in which a request that did not answer is
-//!   `null`. A single-request set whose one request failed has no result at
-//!   all and so no blob.
+//!   with a `server.features` object, which is the comparison the blob table
+//!   exists for -- and, for a set of several ([`ProbeKind::Estimatefee`] and
+//!   [`ProbeKind::Fingerprint`]), an array aligned with `params` in which a
+//!   request that did not answer is `null`. A single-request set whose one
+//!   request failed has no result at all and so no blob.
 //! - **`error`** is `null` when every request answered, and otherwise an
 //!   array aligned with `params` holding `null` where a request succeeded
 //!   and, where one did not, either the server's `error` object *verbatim*
@@ -57,13 +56,12 @@
 //!
 //! # What is not here
 //!
-//! The *initial* set of DESIGN.md section 5 step 3 is not a [`ProbeSet`]: it
-//! is the identity kinds plus [`ProbeKind::Relayfee`] and
-//! [`ProbeKind::MempoolInfo`], run once by the session when a connection
-//! comes up, and giving it a name here would only invite a second list to
-//! drift from this one. [`ProbeKind::CoinbaseTxid`] is in no set either --
-//! the session fires it once per branch while a divergence window is open
-//! (section 5 step 6), with the height it saw the split at.
+//! The *initial* set is not a [`ProbeSet`]: it is the identity kinds plus
+//! [`ProbeKind::Relayfee`] and [`ProbeKind::MempoolInfo`], run once by the
+//! session when a connection comes up, and giving it a name here would only
+//! invite a second list to drift from this one. [`ProbeKind::CoinbaseTxid`]
+//! is in no set either -- the session fires it once per branch while a
+//! divergence window is open, with the height it saw the split at.
 
 use std::future::{Future, poll_fn};
 use std::pin::Pin;
@@ -76,14 +74,14 @@ use tracing::debug;
 use crate::TARGET_PROBES;
 use crate::jsonrpc::{Client, Error, RawCall, Response};
 // The two strings the fingerprint set's second `server.version` repeats are
-// the ones the handshake already sent (DESIGN.md section 5 step 2): the probe
-// is about the server's objection to being told twice, so they are taken from
-// the session rather than spelled out again here.
+// the ones the handshake already sent: the probe is about the server's
+// objection to being told twice, so they are taken from the session rather
+// than spelled out again here.
 use crate::session::{CLIENT_NAME, PROTOCOL_VERSION};
 use crate::store::{Event, Micros, PeerEdge};
 
 /// The confirmation targets every fee set asks `blockchain.estimatefee`
-/// about (DESIGN.md section 6).
+/// about.
 ///
 /// The comparison data: two servers in front of one `bitcoind` return the
 /// same numbers from the same `estimatesmartfee`, and two that do not are
@@ -101,8 +99,8 @@ pub const ESTIMATEFEE_EDGE_TARGETS: &[i64] = &[0, 1009, 100_000];
 /// The target the `mode` variants are asked at.
 ///
 /// One target rather than all of them: the mode is what is being compared,
-/// and ElectrumX counts and costs requests per connection (DESIGN.md section
-/// 6), so the set pays for two extra requests and not for fourteen.
+/// and ElectrumX counts and costs requests per connection, so the set pays
+/// for two extra requests and not for fourteen.
 pub const ESTIMATEFEE_MODE_TARGET: i64 = 6;
 
 /// The `mode` strings the fee set asks for.
@@ -143,16 +141,15 @@ const NO_RAW_REPLY: &str = "no reply to the raw request";
 /// One question, or one group of questions that is only ever asked and read
 /// together.
 ///
-/// The variants are the `probes.kind` values of DESIGN.md section 4 and the
-/// spellings in [`as_str`](Self::as_str) are the column's contents, so they
-/// are as stable as the table: renaming one splits every analysis query that
-/// groups by it into a before and an after.
+/// The variants are the `probes.kind` values and the spellings in
+/// [`as_str`](Self::as_str) are the column's contents, so they are as stable
+/// as the table: renaming one splits every analysis query that groups by it
+/// into a before and an after.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProbeKind {
     /// `mempool.get_fee_histogram`.
     FeeHistogram,
-    /// `blockchain.estimatefee` at every target of DESIGN.md section 6, in
-    /// one set.
+    /// `blockchain.estimatefee` at every target, in one set.
     Estimatefee,
     /// `blockchain.relayfee`.
     Relayfee,
@@ -168,8 +165,7 @@ pub enum ProbeKind {
     /// `server.peers.subscribe`, which is also the source of `peer_edges`
     /// and of discovery.
     Peers,
-    /// The nine deliberately odd requests of DESIGN.md section 6, in one
-    /// set.
+    /// The nine deliberately odd requests, in one set.
     Fingerprint,
     /// `blockchain.transaction.id_from_pos(height, 0)`: the coinbase txid of
     /// the block a server is on, asked once per branch while a divergence
@@ -195,8 +191,7 @@ impl ProbeKind {
     }
 }
 
-/// A group of kinds that one timer fires together (DESIGN.md section 5 step
-/// 5).
+/// A group of kinds that one timer fires together.
 ///
 /// A set is a schedule rather than a row: each of its kinds is still its own
 /// row, because `probes.kind` is what an analysis groups by and a histogram
@@ -311,7 +306,7 @@ impl ProbeArgs {
 /// The ids the session already chose for the row this probe will become.
 ///
 /// `probe_id` is chosen before the probe is sent because `peer_edges` names
-/// it and has to be written in the same batch (DESIGN.md section 4).
+/// it and has to be written in the same batch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProbeIds {
     pub probe_id: i64,
@@ -321,10 +316,9 @@ pub struct ProbeIds {
 
 /// What a kind asks, as an ordered list of requests.
 ///
-/// Built from the kind alone (plus [`ProbeArgs`]), so it is the one place
-/// the protocol methods of DESIGN.md section 6 are written down and the one
-/// thing a test has to read to know that a set still asks what the design
-/// says it does.
+/// Built from the kind alone (plus [`ProbeArgs`]), so it is the one place the
+/// protocol methods are written down and the one thing a test has to read to
+/// know that a set still asks what it is supposed to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProbeSpec {
     kind: ProbeKind,
@@ -380,8 +374,7 @@ fn requests_for(kind: ProbeKind, args: ProbeArgs) -> Vec<ProbeRequest> {
 }
 
 /// The ordinary targets, then the edge cases, then the modes: the order
-/// DESIGN.md section 6 lists them in, and the order `probes.params` is read
-/// by.
+/// `probes.params` is read by.
 fn estimatefee_requests() -> Vec<ProbeRequest> {
     ESTIMATEFEE_TARGETS
         .iter()
@@ -396,7 +389,7 @@ fn estimatefee_requests() -> Vec<ProbeRequest> {
         .collect()
 }
 
-/// The nine of DESIGN.md section 6, in the order it lists them.
+/// The nine of the fingerprint set, in the order `probes.params` holds them.
 ///
 /// Nine and not more: ElectrumX counts and costs requests per connection and
 /// disconnects a client that trips its limit, so this set is deliberately
@@ -757,7 +750,7 @@ fn peer_edges(result: &Value) -> (Vec<PeerEdge>, usize) {
     (edges, skipped)
 }
 
-/// One `[ip, host, [features...]]` row (DESIGN.md section 7).
+/// One `[ip, host, [features...]]` row of a `server.peers.subscribe` reply.
 ///
 /// The host is what the edge is about, so a row without one is not an edge;
 /// the address may be missing or empty, because a server that advertises a

@@ -1,11 +1,10 @@
 //! The SQLite database: the schema, the few direct queries, and the writer
 //! task that everything else sends its observations to.
 //!
-//! DESIGN.md section 4 is the data model and this module is its only
-//! implementation: no other module names a table, a column or a `rusqlite`
-//! type. What leaves here is [`ServerRow`], [`Micros`] and the ids the
-//! counters hand out, so that a change to the schema is a change to this
-//! file.
+//! This module is the only implementation of the data model: no other module
+//! names a table, a column or a `rusqlite` type. What leaves here is
+//! [`ServerRow`], [`Micros`] and the ids the counters hand out, so that a
+//! change to the schema is a change to this file.
 //!
 //! The store has two faces, because what it is asked to do has two shapes.
 //!
@@ -13,19 +12,18 @@
 //! [`Store::enabled_servers`], [`Store::set_meta`] -- is for the handful of
 //! operations whose answer the caller needs before it can continue: the
 //! supervisor cannot open a session to a server whose id it does not know,
-//! and the discovery cap of DESIGN.md section 7 is a count that has to be
-//! taken and acted on without another thread inserting in between, which is
-//! why the check and the insert are one transaction rather than two calls.
+//! and the discovery cap is a count that has to be taken and acted on without
+//! another thread inserting in between, which is why the check and the insert
+//! are one transaction rather than two calls.
 //!
 //! The **writer task** is for everything else, which is almost everything:
 //! header events, pings, probes, tip checks. Those are a stream that nobody
 //! waits for, so they go down one mpsc channel to one task that owns the
-//! connection and commits them in batched transactions (DESIGN.md section
-//! 3). SQLite has one writer anyway; making that explicit means no session
-//! ever blocks on a lock, and the order of what is written is the order of
-//! what was observed.
+//! connection and commits them in batched transactions. SQLite has one writer
+//! anyway; making that explicit means no session ever blocks on a lock, and
+//! the order of what is written is the order of what was observed.
 //!
-//! Three things the design leaves to the implementation, decided here:
+//! Three things the data model leaves to the implementation, decided here:
 //!
 //! - **Ids are chosen by the client, not by SQLite.** A session needs the id
 //!   of its connection to label the rows it is about to write, and a probe's
@@ -81,10 +79,10 @@ const MIGRATIONS: &[&str] = &[include_str!("store/schema.sql")];
 /// How long a statement waits for another writer before it gives up.
 ///
 /// There is one writer in this process, so the contention this covers is the
-/// reader attached to the live database that WAL mode exists for (DESIGN.md
-/// section 4), plus the direct calls of the supervisor. A few seconds is far
-/// more than either needs and still bounded, so a stuck reader shows up as a
-/// logged failure rather than as a collector that silently stopped.
+/// reader attached to the live database that WAL mode exists for, plus the
+/// direct calls of the supervisor. A few seconds is far more than either
+/// needs and still bounded, so a stuck reader shows up as a logged failure
+/// rather than as a collector that silently stopped.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How many events may be queued before a session waits.
@@ -111,8 +109,8 @@ const FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 /// `i64` so that the conversion from [`SystemTime`] happens once, here, at
 /// the boundary: the rest of the crate stamps what it observes with
 /// `SystemTime::now()` where the bytes arrive and hands that over, which is
-/// the whole discipline of DESIGN.md section 4 -- the number in the row is
-/// when the last byte was read, not when the row was written.
+/// the whole discipline of this crate -- the number in the row is when the
+/// last byte was read, not when the row was written.
 ///
 /// Microseconds because the signal is tens of milliseconds and the noise
 /// floor is a scheduler's wake-up, so the unit has to be smaller than both
@@ -188,7 +186,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// both first-seen evidence, but only the second one is evidence about *this*
 /// block: the subscribe reply is whatever the server's tip happened to be
 /// when we connected, so an analysis that does not separate them measures
-/// our own connection times (DESIGN.md section 5, step 4).
+/// our own connection times.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HeaderKind {
     /// The reply to `blockchain.headers.subscribe`.
@@ -208,7 +206,7 @@ impl HeaderKind {
 }
 
 /// The disabled reason written when a server arrives past
-/// `discovery.max_servers` (DESIGN.md section 7).
+/// `discovery.max_servers`.
 pub const REASON_CAP: &str = "cap";
 
 /// One known server, as the supervisor reads it back.
@@ -269,7 +267,7 @@ pub struct PeerEdge {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// A dial has begun. Written on the attempt, so a dial that never
-    /// connects is a row too (DESIGN.md section 5, step 1).
+    /// connects is a row too.
     ConnectionStarted {
         id: i64,
         server_id: i64,
@@ -344,8 +342,8 @@ pub enum Event {
         /// `blobs` and lands in `probes.result_blob`.
         result: Option<Value>,
         /// Stored inline, unlike the result: an error is small, it is read
-        /// beside the row it belongs to, and `probes.error` is the column
-        /// DESIGN.md section 4 gives it.
+        /// beside the row it belongs to, and `probes.error` is the column it
+        /// has.
         error: Option<Value>,
     },
     /// The peers one `server.peers.subscribe` advertised, as edges of the
@@ -478,13 +476,13 @@ impl Store {
     /// source of a server is who told us about it *first*, and an operator
     /// who disabled one does not want the next peer list to enable it again.
     ///
-    /// `cap` is `discovery.max_servers` (DESIGN.md section 7), or `None` for
-    /// the sources that are not subject to it -- the config file and the
-    /// imports, which are what the operator asked for. At the cap the row is
-    /// still inserted, with `enabled = false` and
-    /// `disabled_reason = 'cap'`, because the advertisement is data whether
-    /// or not it is connected to. The count and the insert are one
-    /// transaction so that two callers at the cap cannot both see room.
+    /// `cap` is `discovery.max_servers`, or `None` for the sources that are
+    /// not subject to it -- the config file and the imports, which are what
+    /// the operator asked for. At the cap the row is still inserted, with
+    /// `enabled = false` and `disabled_reason = 'cap'`, because the
+    /// advertisement is data whether or not it is connected to. The count and
+    /// the insert are one transaction so that two callers at the cap cannot
+    /// both see room.
     pub fn upsert_server(
         &self,
         endpoint: &Endpoint,
@@ -563,7 +561,7 @@ impl Store {
 
     /// Stops sessions being opened to a server, and records why.
     ///
-    /// `reason` is one of the values of DESIGN.md section 4:
+    /// `reason` is one of the values `servers.disabled_reason` takes:
     /// [`REASON_CAP`], `genesis_mismatch`, or whatever an operator typed.
     pub fn disable_server(&self, id: i64, reason: &str) -> Result<()> {
         self.conn()
@@ -1038,10 +1036,10 @@ fn apply(tx: &Transaction<'_>, event: &Event) -> rusqlite::Result<()> {
 ///
 /// Insert-or-ignore: the same fee histogram from forty servers is one row,
 /// and the equality of two `result_blob` values is then the whole "did these
-/// two answer the same thing" query (DESIGN.md section 4). The hash is of the
-/// serialised text and not of the value, so that what is hashed is exactly
-/// what is stored; `serde_json` orders object keys, so two servers that
-/// answered the same thing in a different field order still collapse.
+/// two answer the same thing" query. The hash is of the serialised text and
+/// not of the value, so that what is hashed is exactly what is stored;
+/// `serde_json` orders object keys, so two servers that answered the same
+/// thing in a different field order still collapse.
 fn store_blob(tx: &Transaction<'_>, result: &Value) -> rusqlite::Result<String> {
     let json = json_text(result);
     let sha256 = sha256_hex(json.as_bytes());
@@ -1118,13 +1116,12 @@ fn server_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerRow> {
 /// The pragmas every connection to this database is opened with.
 ///
 /// WAL because a reader with `sqlite3` or DuckDB attached to the live
-/// database is the normal way this data is looked at (DESIGN.md section 4),
-/// and it must not block the collector. `synchronous = NORMAL` is the
-/// documented companion of WAL: a crash can lose the last commits, which for
-/// this daemon is a second of observations, and the alternative is an fsync
-/// per batch on a write-heavy file. Foreign keys because every id in this
-/// schema points at a row that should exist, and SQLite only enforces that
-/// when asked, per connection.
+/// database is the normal way this data is looked at, and it must not block
+/// the collector. `synchronous = NORMAL` is the documented companion of WAL:
+/// a crash can lose the last commits, which for this daemon is a second of
+/// observations, and the alternative is an fsync per batch on a write-heavy
+/// file. Foreign keys because every id in this schema points at a row that
+/// should exist, and SQLite only enforces that when asked, per connection.
 fn configure(conn: &Connection) -> Result<()> {
     // Returns a row ("wal", or "memory" for an in-memory database, which
     // cannot have a write-ahead log and does not need one), so it is a query
@@ -1386,7 +1383,7 @@ mod tests {
                 "tip_checks",
                 "tls_certs",
             ],
-            "every table of DESIGN.md section 4, and nothing else",
+            "every table of the data model, and nothing else",
         );
         assert_eq!(
             names(&store, "index"),

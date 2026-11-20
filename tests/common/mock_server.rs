@@ -1,15 +1,14 @@
 //! An Electrum server that answers what a test tells it to, over a real
 //! socket.
 //!
-//! Steps 7 to 10 and 14 of `PLAN.md` are all about what a *session* does to a
-//! server and what it makes of the answers: the handshake order of
-//! `DESIGN.md` section 5, the probe sets of section 6, a header announcement
-//! stamped as it arrives, a reorg seen as two hashes at one height, a
-//! disconnection and the backoff after it. None of that can be tested against
-//! public servers -- they do not announce a block on request, do not fork on
-//! request and are not ours to hammer -- and none of it can be tested against
-//! a hand-rolled `tokio::io::duplex` pair either, because the thing under
-//! test is a session that dials an address.
+//! The integration tests are about what a *session* does to a server and
+//! what it makes of the answers: the handshake order, the probe sets, a
+//! header announcement stamped as it arrives, a reorg seen as two hashes at
+//! one height, a disconnection and the backoff after it. None of that can be
+//! tested against public servers -- they do not announce a block on request,
+//! do not fork on request and are not ours to hammer -- and none of it can be
+//! tested against a hand-rolled `tokio::io::duplex` pair either, because the
+//! thing under test is a session that dials an address.
 //!
 //! So this is a server: it binds `127.0.0.1:0`, speaks newline-delimited
 //! JSON-RPC 2.0 to as many connections as a test opens, answers the methods
@@ -26,7 +25,7 @@
 //! block hash should be asserting on a hash that exists.
 //!
 //! **Misbehaviour is configurable, because misbehaviour is what is being
-//! collected.** DESIGN.md section 6 fingerprints servers by the verbatim
+//! collected.** The fingerprint set identifies servers by the verbatim
 //! strings they return for odd requests, so the knobs here model the
 //! differences between implementations rather than hiding them:
 //! [`Behaviour::require_version_first`] is ElectrumX's handshake rule,
@@ -43,9 +42,9 @@
 //! the listener, decoding the compiled-in header constants -- panics, and it
 //! panics in the test's own task where the failure is legible.
 //!
-//! TLS is deliberately absent: step 7 brings a rustls listener of its own for
-//! the certificate capture, and a TLS flag here would be a second
-//! implementation of it.
+//! TLS is deliberately absent: the dial tests bring a rustls listener of
+//! their own for the certificate capture, and a TLS flag here would be a
+//! second implementation of it.
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -75,8 +74,7 @@ pub const BLOCK_1_HEADER: &str = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e83
 /// The coinbase txid of the genesis block, which is also its merkle root.
 ///
 /// What `blockchain.transaction.id_from_pos(0, 0)` answers by default, so
-/// that the divergence probe of DESIGN.md section 5 step 6 has something real
-/// to find.
+/// that the divergence probe has something real to find.
 pub const GENESIS_COINBASE_TXID: &str =
     "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";
 
@@ -114,8 +112,8 @@ pub fn rpc_error(code: i64, message: &str) -> Value {
 /// needs the behaviour the variant provokes.
 #[derive(Clone, Debug)]
 pub enum Reaction {
-    /// An arbitrary `error` object, as in the fingerprint set of DESIGN.md
-    /// section 6: what a test needs when it cares about the exact string.
+    /// An arbitrary `error` object, as in the fingerprint set: what a test
+    /// needs when it cares about the exact string.
     Error(Value),
     /// An arbitrary `result`, for shapes this harness has no canned answer
     /// for -- a `blockchain.block.header` with a `cp_height`, say.
@@ -146,8 +144,8 @@ pub struct Tip {
 /// blocks.
 #[derive(Clone, Debug)]
 pub struct Behaviour {
-    /// `server.version` -> `[software, protocol]` (DESIGN.md section 5 step
-    /// 2, where both strings are stored on the connection).
+    /// `server.version` -> `[software, protocol]`, both of which the
+    /// collector stores on the connection.
     pub server_version: (String, String),
     /// `server.features`. Kept as a `Value` rather than a struct because the
     /// collector stores it verbatim and the interesting servers are the ones
@@ -165,10 +163,9 @@ pub struct Behaviour {
     pub mempool_info: Value,
     /// `blockchain.estimatefee` by target. A target that is not in here is
     /// answered `-1`, which is what a server with no estimate for that
-    /// horizon returns -- and the edge-case targets of DESIGN.md section 6
-    /// (`0`, `1009`, `100000`) are deliberately absent so that the default
-    /// server is one of the implementations that answers `-1` rather than one
-    /// that errors.
+    /// horizon returns -- and the edge-case targets (`0`, `1009`, `100000`)
+    /// are deliberately absent so that the default server is one of the
+    /// implementations that answers `-1` rather than one that errors.
     pub estimatefee: BTreeMap<i64, Value>,
     /// `server.peers.subscribe`, rows of `[ip, host, [features...]]`.
     pub peers: Value,
@@ -184,9 +181,9 @@ pub struct Behaviour {
     pub overrides: BTreeMap<String, Reaction>,
     /// ElectrumX's handshake rule: any method before `server.version` is an
     /// error, and a second `server.version` is the error
-    /// `server.version already sent`. The reason DESIGN.md section 5 makes
-    /// the handshake the first message on every connection, and therefore
-    /// the reason to be able to test that it is.
+    /// `server.version already sent`. The reason the handshake is the first
+    /// message on every connection, and therefore the reason to be able to
+    /// test that it is.
     pub require_version_first: bool,
     /// Lines that are not JSON, written the moment the connection is
     /// accepted.
@@ -338,9 +335,9 @@ impl Behaviour {
 ///
 /// Every line is recorded, in arrival order across all connections, including
 /// the ones that were not valid requests: what a session *sent*, and in which
-/// order, is half of what the tests of steps 10 and 14 assert, and a session
-/// that sends a probe twice or sends it before the handshake leaves its trace
-/// here and nowhere else.
+/// order, is half of what the session and end-to-end tests assert, and a
+/// session that sends a probe twice or sends it before the handshake leaves
+/// its trace here and nowhere else.
 ///
 /// A batch line yields one entry per element, each carrying the whole line in
 /// [`raw`](Self::raw); a line that was not a request at all yields one entry
@@ -451,9 +448,9 @@ impl MockServer {
     /// Pushes a `blockchain.headers.subscribe` notification to every
     /// subscribed connection and makes the header the new tip.
     ///
-    /// This is the measurement of DESIGN.md section 1 turned inside out: the
-    /// collector exists to record when an announcement arrived, so a test has
-    /// to be able to say when it was sent. Returns how many connections were
+    /// This is the collector's measurement turned inside out: the collector
+    /// exists to record when an announcement arrived, so a test has to be
+    /// able to say when it was sent. Returns how many connections were
     /// notified.
     ///
     /// The tip is replaced but `headers` is not: announcing a hash at a
@@ -487,8 +484,8 @@ impl MockServer {
     /// Together with [`announce_header`](Self::announce_header) this is a
     /// reorg: announce a different header at a height that was already
     /// announced, then switch the polled answer to match, and a session in
-    /// divergence mode (DESIGN.md section 5 step 6) sees exactly what it
-    /// would see against a server that reorganised.
+    /// divergence mode sees exactly what it would see against a server that
+    /// reorganised.
     pub fn set_header(&self, height: u64, hex: &str) {
         lock(&self.state.behaviour)
             .headers
@@ -835,9 +832,9 @@ fn dispatch(
 
 /// What the configured server answers, with no override in the way.
 ///
-/// `Ok` is a `result`, `Err` an `error` object. Both are answers: DESIGN.md
-/// section 6 collects error strings as data, so an error here is a canned
-/// answer like any other and not a failure of the harness.
+/// `Ok` is a `result`, `Err` an `error` object. Both are answers: the
+/// fingerprint set collects error strings as data, so an error here is a
+/// canned answer like any other and not a failure of the harness.
 fn canned(
     behaviour: &Behaviour,
     connection: &ConnectionState,
@@ -850,7 +847,7 @@ fn canned(
                 && connection.version_seen.swap(true, Ordering::Relaxed)
             {
                 // ElectrumX's wording, which is one of the strings the
-                // fingerprint set of DESIGN.md section 6 collects.
+                // fingerprint set collects.
                 return Err(rpc_error(BAD_REQUEST, "server.version already sent"));
             }
             connection.version_seen.store(true, Ordering::Relaxed);

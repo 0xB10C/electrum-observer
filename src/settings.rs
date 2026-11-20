@@ -45,12 +45,11 @@ use crate::store::sha256_hex;
 
 /// The chain being observed.
 ///
-/// One daemon watches one chain, because the block book of DESIGN.md
-/// section 4 is a book of one chain's blocks: a server on another chain
-/// announcing its own height 870000 would collide with ours. The names are
-/// the ones the config file uses, which is why the renaming is spelled out
-/// rather than left to the variant names -- a file written against one
-/// version has to keep loading.
+/// One daemon watches one chain, because the `blocks` book is a book of one
+/// chain's blocks: a server on another chain announcing its own height 870000
+/// would collide with ours. The names are the ones the config file uses,
+/// which is why the renaming is spelled out rather than left to the variant
+/// names -- a file written against one version has to keep loading.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Chain {
@@ -75,11 +74,10 @@ impl Chain {
 
     /// The hash of this chain's genesis block.
     ///
-    /// What `server.features` is checked against on every connection
-    /// (DESIGN.md section 5 step 3). A server that answers with another
-    /// chain's genesis is disabled rather than merely ignored, because its
-    /// headers would otherwise go into `blocks` and the cross-server book
-    /// would be a book of two chains.
+    /// What `server.features` is checked against on every connection. A
+    /// server that answers with another chain's genesis is disabled rather
+    /// than merely ignored, because its headers would otherwise go into
+    /// `blocks` and the cross-server book would be a book of two chains.
     ///
     /// Computed from the bitcoin crate rather than written out here, so that
     /// the constant this crate compares against is the same one the rest of
@@ -110,11 +108,11 @@ pub struct Settings {
 
     /// How many connections are opened to each server.
     ///
-    /// More than one is the noise floor of DESIGN.md section 5: two
-    /// connections to one server announcing the same block N milliseconds
-    /// apart is the resolution limit of the whole method. Raising it here
-    /// raises it for all of them, which is a lot of sockets; `overrides` is
-    /// the way to raise it for the few endpoints an experiment is about.
+    /// More than one is the noise-floor experiment: two connections to one
+    /// server announcing the same block N milliseconds apart is the
+    /// resolution limit of the whole method. Raising it here raises it for
+    /// all of them, which is a lot of sockets; `overrides` is the way to
+    /// raise it for the few endpoints an experiment is about.
     pub sessions_per_server: usize,
 
     /// Per-endpoint session counts, overriding `sessions_per_server`.
@@ -171,8 +169,8 @@ pub struct TimeoutSettings {
     ///
     /// Bounds a probe and not the connection: a server that never answers
     /// one request keeps its subscription and is recorded as having failed
-    /// that probe (DESIGN.md section 8), because a server that is slow about
-    /// `estimatefee` is still telling us when it saw the last block.
+    /// that probe, because a server that is slow about `estimatefee` is still
+    /// telling us when it saw the last block.
     pub request_secs: u64,
 }
 
@@ -186,7 +184,7 @@ pub struct ReconnectSettings {
     pub max_secs: u64,
 }
 
-/// `cadence`: how often each probe set goes out (DESIGN.md section 6).
+/// `cadence`: how often each probe set goes out.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CadenceSettings {
@@ -224,8 +222,7 @@ pub struct DiscoverySettings {
     /// Whether `server.peers.subscribe` results become servers of our own.
     ///
     /// Off still records the advertisements: `peer_edges` is written either
-    /// way, because who advertises whom is data in its own right
-    /// (DESIGN.md section 7).
+    /// way, because who advertises whom is data in its own right.
     pub enabled: bool,
     /// The ceiling on enabled servers, first come first served.
     ///
@@ -242,7 +239,7 @@ pub struct DnsSettings {
     pub upstream: Option<String>,
 }
 
-/// `tor`: the in-process arti client (DESIGN.md section 9).
+/// `tor`: the in-process arti client.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TorSettings {
@@ -261,7 +258,7 @@ pub struct TorSettings {
     ///
     /// Off by default, and the default matters more here than most: a
     /// circuit's latency and jitter land on every timing this daemon
-    /// collects, and the measurement of DESIGN.md section 1 is tens of
+    /// collects, and the measurement this daemon takes is tens of
     /// milliseconds wide.
     pub route_clearnet: bool,
 }
@@ -484,8 +481,8 @@ impl Settings {
 
     /// Where arti keeps its state, defaulted next to the database.
     ///
-    /// The design left this as `...`; it is `<database dir>/arti`, so that
-    /// the daemon has one state directory rather than two and a NixOS
+    /// `tor.state_dir` left unset is `<database dir>/arti`, so that the
+    /// daemon has one state directory rather than two and a NixOS
     /// `StateDirectory` covers both. A database with no directory part --
     /// `observer.sqlite`, run from a checkout -- puts it in the working
     /// directory for the same reason.
@@ -565,7 +562,7 @@ impl Default for TimeoutSettings {
 }
 
 impl Default for ReconnectSettings {
-    /// Ten seconds to an hour, the range of DESIGN.md section 5 step 7.
+    /// Ten seconds to an hour.
     fn default() -> Self {
         Self {
             min_secs: 10,
@@ -575,7 +572,7 @@ impl Default for ReconnectSettings {
 }
 
 impl Default for CadenceSettings {
-    /// The cadences of DESIGN.md section 6.
+    /// Two minutes, five minutes, an hour, a day.
     fn default() -> Self {
         Self {
             ping_secs: 120,
@@ -817,9 +814,8 @@ mod tests {
 
     /// arti's state sits next to the database unless the file says where.
     ///
-    /// The design wrote this default as `...`; it is `<database dir>/arti`,
-    /// so that the daemon has one state directory and a NixOS
-    /// `StateDirectory` covers both.
+    /// The default is `<database dir>/arti`, so that the daemon has one state
+    /// directory and a NixOS `StateDirectory` covers both.
     #[test]
     fn the_tor_state_directory_defaults_next_to_the_database() {
         assert_eq!(

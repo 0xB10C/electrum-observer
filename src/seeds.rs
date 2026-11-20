@@ -1,14 +1,14 @@
 //! Where the first servers come from.
 //!
-//! Discovery (DESIGN.md section 7) only works once there is something to ask,
-//! and the thing it asks is a server this crate was told about by other
-//! means. There are three such means and they are all here: a file the
-//! operator wrote, the hand-picked list Sparrow Wallet ships, and the server
-//! table at <https://1209k.com/bitcoin-eye/>, which is the only public census
-//! of Electrum servers that is kept current. Each one produces
-//! [`Endpoint`]s, and `electrum-observer import` writes them into `servers`
-//! with the matching `source` (DESIGN.md section 4), so a later query can ask
-//! where a server was learned from as well as what it answered.
+//! Discovery only works once there is something to ask, and the thing it asks
+//! is a server this crate was told about by other means. There are three such
+//! means and they are all here: a file the operator wrote, the hand-picked
+//! list Sparrow Wallet ships, and the server table at
+//! <https://1209k.com/bitcoin-eye/>, which is the only public census of
+//! Electrum servers that is kept current. Each one produces [`Endpoint`]s,
+//! and `electrum-observer import` writes them into `servers` with the
+//! matching `source`, so a later query can ask where a server was learned
+//! from as well as what it answered.
 //!
 //! None of this is on the measurement path: an import is a command an
 //! operator runs, it touches the network once if at all, and what it writes
@@ -31,8 +31,8 @@ use crate::settings::Chain;
 /// The `servers.source` value for endpoints that came from a file.
 ///
 /// The same spelling the configuration's `servers_file` uses, because they
-/// are the same thing said twice: a list the operator chose. DESIGN.md
-/// section 4 names four sources and this is one of them.
+/// are the same thing said twice: a list the operator chose. It is one of the
+/// four values the column takes.
 pub const SOURCE_FILE: &str = "config";
 
 /// The `servers.source` value for the built-in Sparrow list.

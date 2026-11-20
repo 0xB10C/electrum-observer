@@ -5,9 +5,9 @@
 //! someone else's `server.peers.subscribe` reply, an `overrides` key in the
 //! configuration. [`Endpoint`] is where those spellings meet. It parses the
 //! two that exist in the wild and prints exactly one of them, and that one
-//! printed form is the identity of a server in the `servers` table
-//! (DESIGN.md section 4), so two sources naming the same server have to
-//! arrive at the same string or the database grows two rows for one machine.
+//! printed form is the identity of a server in the `servers` table, so two
+//! sources naming the same server have to arrive at the same string or the
+//! database grows two rows for one machine.
 //!
 //! The two spellings:
 //!
@@ -17,8 +17,8 @@
 //!   defensible reading.
 //! - `host:port:s` and `host:port:t`, Electrum's own, where the trailing
 //!   letter is the transport. The 1209k server table and the feature strings
-//!   of `server.peers.subscribe` (DESIGN.md section 7) are written this way,
-//!   so the importers need it; nothing in this crate ever writes it back.
+//!   of `server.peers.subscribe` are written this way, so the importers need
+//!   it; nothing in this crate ever writes it back.
 //!
 //! Normalisation is part of parsing rather than something callers remember to
 //! do: hostnames are lowercased, because DNS is case-insensitive and
@@ -38,9 +38,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 /// How the bytes get to the server.
 ///
 /// Both are plain Electrum over a stream; `Ssl` wraps it in TLS, which is
-/// also where the certificate chain comes from that DESIGN.md section 4
-/// stores. The names are the ones the protocol and the config file use, and
-/// the ones the `servers.transport` column holds.
+/// also where the certificate chain comes from that `tls_certs` stores. The
+/// names are the ones the protocol and the config file use, and the ones the
+/// `servers.transport` column holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Transport {
     /// Plain TCP, Electrum's `t` ports.
@@ -70,9 +70,8 @@ impl fmt::Display for Transport {
 /// Derived from the host rather than configured, because it is a property of
 /// the address and not a choice: a `.onion` name can only be dialed through
 /// Tor, and anything else cannot be. It decides whether a session waits for
-/// the arti bootstrap (DESIGN.md section 9) and whether discovery is allowed
-/// to keep the address at all (section 7), and it is the `servers.network`
-/// column.
+/// the arti bootstrap and whether discovery is allowed to keep the address at
+/// all, and it is the `servers.network` column.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Network {
     /// Reachable over the ordinary internet, directly or through Tor.
@@ -103,9 +102,9 @@ impl fmt::Display for Network {
 /// because they are dialed differently and because they mean different things
 /// to the question this crate exists to ask: a literal address is one machine,
 /// while a name is however many machines its records point at today, which is
-/// why every A and AAAA of every lookup is recorded (DESIGN.md section 4).
-/// Onion is its own variant for the same reason the [`Network`] exists -- it
-/// is the one host kind that cannot be resolved or dialed at all without Tor.
+/// why every A and AAAA of every lookup is recorded. Onion is its own variant
+/// for the same reason the [`Network`] exists -- it is the one host kind that
+/// cannot be resolved or dialed at all without Tor.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Host {
     /// A DNS name, lowercased on parse.
@@ -807,7 +806,7 @@ mod tests {
         assert!(!seen.insert(electrum), "one server, one entry");
 
         // The same host over both transports is two servers, and both are
-        // kept: they are the positive control of DESIGN.md section 7.
+        // kept: they are the positive control of the whole method.
         let tcp: Endpoint = "tcp://electrum.example:50001".parse().expect("an endpoint");
         assert_ne!(url, tcp);
         assert!(seen.insert(tcp.clone()));

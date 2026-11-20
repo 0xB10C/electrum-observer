@@ -16,5 +16,4 @@ Background: [0xB10C/project-ideas#11](https://github.com/0xB10C/project-ideas/is
 [Electrum server monitoring](https://bnoc.xyz/t/electrum-server-monitoring/135)
 and [header propagation and shared infrastructure](https://bnoc.xyz/t/electrum-server-monitoring-header-propagation-and-shared-infrastructure/167).
 
-Work in progress. `DESIGN.md` is the authority on behaviour, `PLAN.md` the
-work order.
+Work in progress.

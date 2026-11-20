@@ -2,24 +2,23 @@
 //!
 //! Electrum is JSON-RPC 2.0 over a stream, one message per line, with
 //! requests carrying a numeric `id` that the matching response repeats and
-//! notifications carrying none. That is the whole wire format, and
-//! DESIGN.md section 2 says why this crate speaks it itself rather than
-//! through `electrum-client`: the number this tool exists to collect is *when
-//! a line arrived*, to a resolution of tens of milliseconds, and a client
-//! that only tells you when someone got round to polling for it has already
-//! added more error than the signal.
+//! notifications carrying none. That is the whole wire format, and this crate
+//! speaks it itself rather than through `electrum-client` because the number
+//! this tool exists to collect is *when a line arrived*, to a resolution of
+//! tens of milliseconds, and a client that only tells you when someone got
+//! round to polling for it has already added more error than the signal.
 //!
 //! So the read loop here does one thing before anything else. It reads until
 //! the newline that ends a line, takes `SystemTime::now()` the instant that
 //! byte is in hand -- before the line is copied out of the buffer, before it
 //! is parsed, before it is routed -- and carries that stamp on every
 //! [`Response`] and [`Notification`] it hands out. Everything downstream, the
-//! channels and the writer task of DESIGN.md section 3, is then free to be as
-//! slow as it likes without moving a measurement.
+//! channels and the single writer task, is then free to be as slow as it
+//! likes without moving a measurement.
 //!
 //! Two consequences shape the rest of the API.
 //!
-//! **A server error is data, not a failure.** DESIGN.md section 6 fingerprints
+//! **A server error is data, not a failure.** The fingerprint set identifies
 //! servers by the verbatim strings they return for deliberately malformed
 //! requests, so an `error` object comes back as the `Err` side of
 //! [`Response::outcome`] with its [`RpcError::raw`] kept exactly as it
@@ -116,8 +115,8 @@ impl From<std::io::Error> for Error {
 ///
 /// The parsed fields are a convenience; [`raw`](Self::raw) is the point. Two
 /// servers answering an unknown method with byte-identical JSON are running
-/// the same software (DESIGN.md section 6), and that comparison is only sound
-/// if nothing on the way in normalised the value.
+/// the same software, and that comparison is only sound if nothing on the way
+/// in normalised the value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RpcError {
     /// `error.code`, when there is one and it is an integer.
@@ -153,9 +152,8 @@ impl RpcError {
 /// One answer to one request.
 ///
 /// Both stamps are from the same clock as every other session's, which is the
-/// reason the whole collector is one process (DESIGN.md section 4); the
-/// difference between them is the round trip that `pings.rtt_us` and
-/// `probes.rtt_us` record.
+/// reason the whole collector is one process; the difference between them is
+/// the round trip that `pings.rtt_us` and `probes.rtt_us` record.
 #[derive(Clone, Debug)]
 pub struct Response {
     /// The request id this answers.
@@ -171,7 +169,7 @@ pub struct Response {
 /// A message the server sent unprompted, which in practice is
 /// `blockchain.headers.subscribe`.
 ///
-/// `received_at` is the measurement of DESIGN.md section 1: the per-server
+/// `received_at` is the measurement this crate exists for: the per-server
 /// first-seen time of a block header, compared across servers to the
 /// microsecond.
 #[derive(Clone, Debug)]
@@ -303,8 +301,8 @@ impl Client {
     /// to do with the socket.
     ///
     /// `request_timeout` is `timeouts.request_secs` from the configuration,
-    /// and bounds one request rather than the connection (DESIGN.md section
-    /// 8): a server that never answers one probe keeps its subscription.
+    /// and bounds one request rather than the connection: a server that never
+    /// answers one probe keeps its subscription.
     pub fn new<S>(stream: S, request_timeout: Duration) -> (Client, Notifications)
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -373,8 +371,7 @@ impl Client {
     ///
     /// Responses may arrive in any order and are matched by id, so several
     /// calls can be in flight on one connection -- which is what a probe set
-    /// (DESIGN.md section 6) is: one set of requests written together and
-    /// stamped as one row.
+    /// is: one set of requests written together and stamped as one row.
     pub async fn call(&self, method: &str, params: Value) -> Result<Response, Error> {
         let id = self.next_id();
         let request = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
@@ -404,12 +401,12 @@ impl Client {
 
     /// Sends a pre-built line and collects the stamped lines that answer it.
     ///
-    /// The escape hatch for the fingerprint set of DESIGN.md section 6, which
-    /// is deliberately malformed requests: a JSON-RPC batch, a request whose
-    /// `id` is not a number, a request with no `jsonrpc` field. None of those
-    /// can be built by [`call`](Self::call), and the answers to some of them
-    /// cannot be routed by id, because the id that comes back is whatever the
-    /// server made of the one that went out.
+    /// The escape hatch for the fingerprint set, which is deliberately
+    /// malformed requests: a JSON-RPC batch, a request whose `id` is not a
+    /// number, a request with no `jsonrpc` field. None of those can be built
+    /// by [`call`](Self::call), and the answers to some of them cannot be
+    /// routed by id, because the id that comes back is whatever the server
+    /// made of the one that went out.
     ///
     /// So routing is turned around: while this call is in flight, every line
     /// that answers *nothing* -- an unknown id, a non-numeric id, a line that
@@ -1004,7 +1001,7 @@ mod tests {
     }
 
     /// The reason there is an `outcome` rather than an error variant: this is
-    /// the data the fingerprint set collects (DESIGN.md section 6).
+    /// the data the fingerprint set collects.
     #[tokio::test]
     async fn a_server_error_is_data_and_not_a_failed_call() {
         let (client, _notifications, mut server) = pair();

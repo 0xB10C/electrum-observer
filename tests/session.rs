@@ -1,9 +1,9 @@
 //! A session against a real socket, and the rows it leaves behind.
 //!
 //! The unit tests in `src/session.rs` cover the vocabulary and the
-//! arithmetic. What they cannot cover is the whole of DESIGN.md section 5,
-//! which is a claim about a database: that a connection writes its
-//! `connections` row with the two version strings on it, that the reply to
+//! arithmetic. What they cannot cover is the whole lifecycle, which is a
+//! claim about a database: that a connection writes its `connections` row
+//! with the two version strings on it, that the reply to
 //! `blockchain.headers.subscribe` and every notification after it become
 //! `header_events` stamped when the line arrived, that the probe timers fire
 //! and land in `probes`, that two servers disagreeing at one height make
@@ -351,9 +351,8 @@ async fn a_connection_records_what_it_did() {
         first_ping - connected_at,
     );
 
-    // The initial set of DESIGN.md section 6, then the fee set and the
-    // fingerprint set on their staggered first run, then the identity set a
-    // cadence later.
+    // The initial set, then the fee set and the fingerprint set on their
+    // staggered first run, then the identity set a cadence later.
     for kind in [
         "features",
         "banner",
@@ -422,7 +421,7 @@ async fn a_connection_records_what_it_did() {
     );
 }
 
-/// The measurement of DESIGN.md section 1: a notification's `at` is when its
+/// The measurement this crate exists for: a notification's `at` is when its
 /// line arrived, which has to be inside the window the test held it in.
 #[tokio::test]
 async fn an_announcement_is_stamped_on_arrival() {
@@ -908,7 +907,7 @@ async fn an_unreadable_peer_list_is_not_handed_on() {
 
 /// A server named by a hostname has its lookup recorded, and the connection
 /// names the lookup it used: a name that round-robins over several addresses
-/// is a hint about how many machines are behind it (DESIGN.md section 4).
+/// is a hint about how many machines are behind it.
 #[tokio::test]
 async fn a_hostname_records_the_lookup_it_used() {
     let server = MockServer::start(Behaviour::default()).await;
@@ -941,7 +940,7 @@ async fn a_hostname_records_the_lookup_it_used() {
 }
 
 /// A server that drops the connection is recorded as an EOF and dialed
-/// again after the backoff, which is the uptime data of DESIGN.md section 4.
+/// again after the backoff, which is the uptime data in `connections`.
 #[tokio::test]
 async fn a_dropped_connection_comes_back() {
     let server = MockServer::start(Behaviour::default()).await;
@@ -990,8 +989,7 @@ async fn a_dropped_connection_comes_back() {
 }
 
 /// A server on another chain is disabled and not dialed again: its headers
-/// would otherwise go into the cross-server block book (DESIGN.md section 5
-/// step 3).
+/// would otherwise go into the cross-server block book.
 #[tokio::test]
 async fn a_genesis_mismatch_disables_the_server() {
     // A hash that is a real block hash and is not any chain's genesis.

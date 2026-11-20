@@ -1,16 +1,16 @@
 -- electrum-observer, schema version 1.
 --
--- The tables of DESIGN.md section 4, in the order that file lists them. This
--- is a migration and not a description: it is applied to a database at
--- version 0 and the version is bumped in the same transaction, so a column
--- is never added here once this file has shipped -- a change is a new file in
--- `MIGRATIONS` and a bumped `SCHEMA_VERSION`.
+-- Every table the collector writes. This is a migration and not a
+-- description: it is applied to a database at version 0 and the version is
+-- bumped in the same transaction, so a column is never added here once this
+-- file has shipped -- a change is a new file in `MIGRATIONS` and a bumped
+-- `SCHEMA_VERSION`.
 --
 -- Every timestamp is INTEGER microseconds since the Unix epoch, taken from
--- `SystemTime` where the bytes arrived rather than where the row was written
--- (DESIGN.md section 4). The whole method is a difference of tens of
--- milliseconds between two servers, so a timestamp that means "when the
--- writer got round to it" would be the measurement rather than the data.
+-- `SystemTime` where the bytes arrived rather than where the row was written.
+-- The whole method is a difference of tens of milliseconds between two
+-- servers, so a timestamp that means "when the writer got round to it" would
+-- be the measurement rather than the data.
 --
 -- Text is used for enumerations -- `transport`, `network`, `kind`,
 -- `end_reason` -- because this database is read by hand, in sqlite3 and in
@@ -29,8 +29,8 @@ CREATE TABLE servers (
     transport       TEXT    NOT NULL,  -- tcp | ssl
     network         TEXT    NOT NULL,  -- clearnet | onion
     -- config, 1209k, sparrow, or peers:<server_id>: which server advertised
-    -- it, which is what makes the discovery graph of section 7 readable
-    -- without joining `peer_edges`.
+    -- it, which is what makes the discovery graph readable without joining
+    -- `peer_edges`.
     source          TEXT    NOT NULL,
     added_at        INTEGER NOT NULL,
     enabled         INTEGER NOT NULL,  -- whether sessions are opened to it
@@ -38,7 +38,7 @@ CREATE TABLE servers (
     -- One row per endpoint. The transport is part of it because the TCP and
     -- SSL ports of one host are two servers to this tool on purpose: they
     -- are certainly one backend, which makes them the positive control every
-    -- other pair's delta is read against (DESIGN.md section 7).
+    -- other pair's delta is read against.
     UNIQUE (host, port, transport)
 );
 
@@ -76,7 +76,7 @@ CREATE TABLE connections (
     server_id        INTEGER NOT NULL REFERENCES servers (id),
     -- Which of this server's sessions: 0 is the one that probes, and the
     -- others exist to measure the noise floor between two connections to the
-    -- same endpoint (DESIGN.md section 5).
+    -- same endpoint.
     session_index    INTEGER NOT NULL,
     started_at       INTEGER NOT NULL,
     connected_at     INTEGER,
@@ -112,7 +112,7 @@ CREATE TABLE header_events (
 
 -- The cross-server block book: which server was first with each block, and
 -- -- when two hashes appear at one height -- that there is a split at all,
--- which is what arms the divergence mode of DESIGN.md section 5.
+-- which is what arms the sessions' divergence polling.
 CREATE TABLE blocks (
     hash                 TEXT PRIMARY KEY,
     height               INTEGER NOT NULL,
@@ -147,7 +147,7 @@ CREATE TABLE pings (
 -- One row per probe *set*, not per request: everything that goes out at one
 -- moment lands in one row whose `params` and result are aligned by index,
 -- because a set asked at one moment is the unit that is compared across
--- servers (DESIGN.md section 6).
+-- servers.
 CREATE TABLE probes (
     id            INTEGER PRIMARY KEY,
     connection_id INTEGER NOT NULL REFERENCES connections (id),
@@ -188,15 +188,15 @@ CREATE TABLE meta (
     value TEXT NOT NULL
 );
 
--- The indexes are the analysis queries of DESIGN.md sections 1 and 4 written
--- down: which servers announced this block (hash), what this server
--- announced over time (server_id, at), the fee sets of one server in order
--- (server_id, kind, sent_at), who else answered this exact thing
--- (result_blob), this server's connection history (server_id, started_at),
--- the branch each server was on at a height (height, at), and the latency
--- baseline of a connection (connection_id, at). Nothing is indexed here that
--- no named query uses: every index is paid for on every insert, and this is
--- a write-heavy database.
+-- The indexes are the analysis queries this database exists for, written
+-- down: which servers announced this block (hash), what this server announced
+-- over time (server_id, at), the fee sets of one server in order (server_id,
+-- kind, sent_at), who else answered this exact thing (result_blob), this
+-- server's connection history (server_id, started_at), the branch each server
+-- was on at a height (height, at), and the latency baseline of a connection
+-- (connection_id, at). Nothing is indexed here that no named query uses:
+-- every index is paid for on every insert, and this is a write-heavy
+-- database.
 CREATE INDEX idx_header_events_hash ON header_events (hash);
 CREATE INDEX idx_header_events_server_at ON header_events (server_id, at);
 CREATE INDEX idx_probes_server_kind_sent ON probes (server_id, kind, sent_at);

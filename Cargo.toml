@@ -6,21 +6,21 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 # Tor, in process, so that no `tor` daemon and no SOCKS proxy has to exist on
-# a host the NixOS module deploys this to (DESIGN.md section 9). The feature
-# selection is crawler's and for crawler's reasons: arti calls its defaults
-# non-additive and the default set pulls in native-tls, which would be a
-# second TLS stack beside the rustls below, so the defaults are off and the
-# five that are wanted are named. `compression` is one of the defaults and is
-# kept, so the directory is still fetched compressed. `static-sqlite` compiles
-# the amalgamation arti's directory cache wants into the binary rather than
-# asking the host for a libsqlite3, which is the choice `rusqlite`'s `bundled`
-# already makes below. `onion-service-client` is the half of arti this crate
-# exists for. `rustls` resolves to the same rustls 0.23 as below, so the graph
-# has one TLS implementation and one crypto provider in it -- `ring`, because
-# that is the only provider feature anything here turns on, which matters:
-# arti builds its client configuration from the process-wide default provider
-# rather than from one passed in, and rustls installs that from the crate
-# features only when exactly one of them is on.
+# a host the NixOS module deploys this to. The feature selection is crawler's
+# and for crawler's reasons: arti calls its defaults non-additive and the
+# default set pulls in native-tls, which would be a second TLS stack beside
+# the rustls below, so the defaults are off and the five that are wanted are
+# named. `compression` is one of the defaults and is kept, so the directory is
+# still fetched compressed. `static-sqlite` compiles the amalgamation arti's
+# directory cache wants into the binary rather than asking the host for a
+# libsqlite3, which is the choice `rusqlite`'s `bundled` already makes below.
+# `onion-service-client` is the half of arti this crate exists for. `rustls`
+# resolves to the same rustls 0.23 as below, so the graph has one TLS
+# implementation and one crypto provider in it -- `ring`, because that is the
+# only provider feature anything here turns on, which matters: arti builds its
+# client configuration from the process-wide default provider rather than from
+# one passed in, and rustls installs that from the crate features only when
+# exactly one of them is on.
 arti-client = { version = "0.48", default-features = false, features = [
   "tokio",
   "rustls",
@@ -29,31 +29,31 @@ arti-client = { version = "0.48", default-features = false, features = [
   "static-sqlite",
 ] }
 # `Chain::genesis_hash`, which every connection checks `server.features`
-# against (DESIGN.md section 5). Also the 80-byte header parsing of step 9,
-# which is the other reason it is here rather than a table of five hashes.
+# against at the handshake. Also the 80-byte header parsing, which is the
+# other reason it is here rather than a table of five hashes.
 bitcoin = "0.32"
 # The CLI: a global --config and one subcommand per thing the binary does.
 clap = { version = "4", features = ["derive"] }
 # Hexadecimal for the content addresses: `blobs.sha256` keys a probe result
 # by the hash of its JSON text, and the same function hashes the
-# configuration file into `meta.config_sha256` (DESIGN.md section 4).
+# configuration file into `meta.config_sha256`.
 hex = "0.4"
-# Resolution, with every A and AAAA record of every lookup kept
-# (DESIGN.md section 4, `dns_resolutions`). hickory rather than tokio's
-# `to_socket_addrs`, which goes through getaddrinfo on a blocking thread and
-# hands back a deduplicated, reordered list with no way to ask what the
-# answer actually was -- and which cannot be pointed at `dns.upstream`.
-# Default features: the system configuration reader and the tokio runtime,
-# and none of the encrypted transports, so no second rustls provider.
+# Resolution, with every A and AAAA record of every lookup kept in
+# `dns_resolutions`. hickory rather than tokio's `to_socket_addrs`, which goes
+# through getaddrinfo on a blocking thread and hands back a deduplicated,
+# reordered list with no way to ask what the answer actually was -- and which
+# cannot be pointed at `dns.upstream`. Default features: the system
+# configuration reader and the tokio runtime, and none of the encrypted
+# transports, so no second rustls provider.
 hickory-resolver = "0.26"
 # The descriptor limit, raised at startup because every monitored server
 # holds its connection open for the lifetime of the process (see `fdlimit`).
 libc = "0.2"
 # The database, which is the product of this daemon rather than a cache of
-# it (DESIGN.md section 4). `bundled` so that the file does not depend on
-# whichever SQLite the host carries: WAL and `ON CONFLICT` upserts are both
-# version-sensitive, and a collector that writes a different file on a
-# different machine is not one database.
+# it. `bundled` so that the file does not depend on whichever SQLite the host
+# carries: WAL and `ON CONFLICT` upserts are both version-sensitive, and a
+# collector that writes a different file on a different machine is not one
+# database.
 #
 # Held at 0.40 rather than the newest: `libsqlite3-sys` declares
 # `links = "sqlite3"`, so a dependency graph may contain exactly one of it,
@@ -82,9 +82,9 @@ serde = { version = "1", features = ["derive"] }
 # result is the sha256 of exactly that text, so the serialiser is part of
 # the data model and not a test convenience.
 # It is also the wire format: `Value` rather than typed messages, because
-# what a server answers is kept verbatim for comparison across servers
-# (DESIGN.md section 6), and a type that only admits what the protocol
-# documents would normalise away the differences this tool exists to record.
+# what a server answers is kept verbatim for comparison across servers, and a
+# type that only admits what the protocol documents would normalise away the
+# differences this tool exists to record.
 serde_json = "1"
 # The configuration file itself. serde_yaml rather than the `config` crate
 # crawler uses: there is one source and no layering, and a plain
@@ -117,13 +117,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # The presented certificate into the columns of `tls_certs`: subject, issuer,
 # SANs and validity. Parsing is best effort and never refuses a connection --
 # a certificate this cannot read is still recorded by its hash and its bytes,
-# because recording is the job (DESIGN.md section 4).
+# because recording is the job.
 x509-parser = "0.18"
 # The one HTTP request this crate makes: the 1209k server table, fetched by
-# `import 1209k` (DESIGN.md section 3). Blocking, which is what that
-# subcommand is, and small enough that a second TLS stack is not worth
-# avoiding; rustls rather than the default features, as in crawler, so that
-# no build of this depends on the host's OpenSSL.
+# `import 1209k`. Blocking, which is what that subcommand is, and small enough
+# that a second TLS stack is not worth avoiding; rustls rather than the
+# default features, as in crawler, so that no build of this depends on the
+# host's OpenSSL.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]

@@ -13,7 +13,7 @@
 //! Three things here are design decisions rather than mechanics.
 //!
 //! **Every record of every lookup is kept**, not just the address that was
-//! dialed (DESIGN.md section 4, `dns_resolutions`). A hostname that
+//! dialed; the whole answer is a `dns_resolutions` row. A hostname that
 //! round-robins over several addresses is a hint about how many machines are
 //! behind it, and a set of hostnames that resolve to one address is a
 //! stronger one; neither survives a resolver that hands back the one address
@@ -30,10 +30,10 @@
 //! ecosystem pins nothing and no client checks them -- so a verifier that
 //! refused what a browser refuses would collect nothing at all, and what is
 //! wanted is the certificate itself: which hostnames present the same one is
-//! about as strong a shared-infrastructure signal as this tool can collect
-//! (DESIGN.md section 4, `tls_certs`). A certificate x509-parser cannot
-//! read is stored by its hash and its bytes with the parsed columns null,
-//! for the same reason.
+//! about as strong a shared-infrastructure signal as this tool can collect,
+//! and the leaf of the chain is what `tls_certs` keeps. A certificate
+//! x509-parser cannot read is stored by its hash and its bytes with the
+//! parsed columns null, for the same reason.
 //!
 //! Tor is a seam here and is filled by [`crate::tor`]: an [`OnionDialer`] is
 //! whatever opens a stream to a name, and with none installed an onion
@@ -93,10 +93,10 @@ pub type BoxStream = Box<dyn Stream>;
 
 /// An onion stream being opened.
 ///
-/// The error is a string rather than arti's own type because this crate does
-/// not depend on arti yet: the seam is defined here in step 7 and filled in
-/// step 8, and a `String` is what both the stub in the tests below and the
-/// real client can produce. It reaches the caller as [`DialError::Tor`].
+/// The error is a string rather than arti's own type because this module does
+/// not depend on arti: the seam is defined here and filled by [`crate::tor`],
+/// and a `String` is what both the stub in the tests below and the real
+/// client can produce. It reaches the caller as [`DialError::Tor`].
 pub type OpeningStream = Pin<Box<dyn Future<Output = Result<BoxStream, String>> + Send>>;
 
 /// The whole of what this module wants from Tor: open a stream to a name.
@@ -116,10 +116,10 @@ pub type OnionDialer = Box<dyn Fn(String, u16) -> OpeningStream + Send + Sync>;
 
 /// One lookup, with every record it returned.
 ///
-/// The row of `dns_resolutions` (DESIGN.md section 4), taken at the moment
-/// the answer arrived. `addresses` is every A and every AAAA, in the order
-/// the resolver gave them; `error` is set when there was no answer at all,
-/// and then `addresses` is empty.
+/// The row of `dns_resolutions`, taken at the moment the answer arrived.
+/// `addresses` is every A and every AAAA, in the order the resolver gave
+/// them; `error` is set when there was no answer at all, and then `addresses`
+/// is empty.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DnsResult {
     /// When the answer arrived.
@@ -134,7 +134,7 @@ pub struct DnsResult {
 ///
 /// The fields are what the `connections` row needs filling in with: the
 /// address that was really reached, the lookup that chose it, and the
-/// certificate the handshake presented (DESIGN.md section 4).
+/// certificate the handshake presented.
 pub struct Dialed {
     /// The connection itself, ready for the JSON-RPC client.
     pub stream: BoxStream,
@@ -172,9 +172,9 @@ struct Opened {
 
 /// Why a dial did not produce a connection.
 ///
-/// Every variant is a value of `connections.end_reason` (DESIGN.md section
-/// 4), because a failed dial is a row too: that a port refuses, or that a
-/// name does not resolve, is the observation.
+/// Every variant is a value of `connections.end_reason`, because a failed
+/// dial is a row too: that a port refuses, or that a name does not resolve,
+/// is the observation.
 #[derive(Debug)]
 pub enum DialError {
     /// The lookup failed, in the resolver's own words. The same text is what
@@ -317,8 +317,7 @@ impl Dialer {
     /// What the setting costs is in the rows: the exit does the connecting
     /// and, for a hostname, the resolving, so a connection made this way has
     /// no `remote_ip` and no `dns_resolutions` row. That, and a circuit's
-    /// latency on every timing collected, is why it is off by default
-    /// (DESIGN.md section 9).
+    /// latency on every timing collected, is why it is off by default.
     #[must_use]
     pub fn with_clearnet_via(mut self, clearnet: OnionDialer) -> Self {
         self.clearnet = Some(clearnet);
@@ -329,9 +328,8 @@ impl Dialer {
     ///
     /// The whole attempt is under one deadline -- DNS, TCP and the TLS
     /// handshake together -- because `timeouts.connect_secs` is documented as
-    /// the time from the start of the dial to a usable connection
-    /// (DESIGN.md section 8), and three deadlines of twenty seconds would be
-    /// a minute.
+    /// the time from the start of the dial to a usable connection, and three
+    /// deadlines of twenty seconds would be a minute.
     ///
     /// A failure is a [`DialError`] whose [`as_str`](DialError::as_str) is
     /// the `connections.end_reason` for the attempt. The lookup of a failed
@@ -728,8 +726,7 @@ fn resolver(dns: &DnsSettings) -> Result<TokioResolver> {
     };
     // Both families, every time. Hickory's default asks for AAAA and falls
     // back to A, which would leave a dual-stack server's A records out of
-    // `dns_resolutions` -- and those records are the data (DESIGN.md
-    // section 4).
+    // `dns_resolutions` -- and those records are the data.
     builder.options_mut().ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
     builder.build().context("building the resolver")
 }
@@ -823,7 +820,7 @@ impl AcceptAny {
     }
 
     /// The leaf of the captured chain, which is the certificate `tls_certs`
-    /// stores (DESIGN.md section 4).
+    /// stores.
     ///
     /// A poisoned lock is read through rather than panicked on: the only
     /// writer is the handshake, and a connection whose certificate was
@@ -1184,7 +1181,7 @@ mod tests {
     /// With a seam installed, the onion endpoint is dialed through it and the
     /// stream it opened is the one handed back.
     ///
-    /// The stub is a `duplex` pair, which is what step 8's arti client is a
+    /// The stub is a `duplex` pair, which is what the real arti client is a
     /// bigger version of: something that returns a stream for a name.
     #[tokio::test]
     async fn an_onion_endpoint_uses_the_installed_seam() {

@@ -4,7 +4,7 @@
 //! Read the configuration, build the runtime, install a subscriber, make room
 //! for the descriptors, arm the stop signal. Everything else is in the
 //! library, so that the end-to-end tests can drive the collector in process
-//! against mock servers (DESIGN.md section 3).
+//! against mock servers.
 //!
 //! Three subcommands. `run` sets all of that up and hands the configuration
 //! and the stop flag to [`electrum_observer::run::run`], which is the
@@ -28,7 +28,7 @@ use electrum_observer::{Endpoint, Settings, Shutdown, TARGET_MAIN, fdlimit, logg
 use tracing::{debug, info};
 
 /// The arguments that change per invocation. Everything else is in the
-/// configuration file (DESIGN.md section 8).
+/// configuration file.
 #[derive(Debug, Parser)]
 #[command(
     version,
@@ -65,7 +65,7 @@ enum Command {
     Servers,
 }
 
-/// Where an import reads its endpoints from (DESIGN.md section 3).
+/// Where an import reads its endpoints from.
 ///
 /// One subcommand per source rather than a `--from` with three values,
 /// because the file source takes a path and the others do not, and clap can
@@ -186,11 +186,11 @@ async fn run(config: &Path) -> Result<()> {
 /// it may make is a single page fetch whose timeout is in `seeds`.
 ///
 /// Nothing is capped. `discovery.max_servers` is about peer lists, which are
-/// unbounded and partly stale (DESIGN.md section 7); a seed list is what the
-/// operator asked to be watched, and a cap applied to it would silently
-/// disable the servers an experiment was set up for. Nothing is enabled again
-/// either: `upsert_server` returns an existing row untouched, so a server
-/// disabled by hand stays disabled through the next import.
+/// unbounded and partly stale; a seed list is what the operator asked to be
+/// watched, and a cap applied to it would silently disable the servers an
+/// experiment was set up for. Nothing is enabled again either:
+/// `upsert_server` returns an existing row untouched, so a server disabled by
+/// hand stays disabled through the next import.
 fn import(config: &Path, source: Source) -> Result<()> {
     let settings = Settings::load(config)?;
     logging::init(&settings.log)?;
@@ -253,9 +253,9 @@ fn import(config: &Path, source: Source) -> Result<()> {
 /// Tab separated and in no one's idea of a table layout, because what this
 /// output is for is `grep`, `cut` and `wc -l`: which servers an import added,
 /// which source named a host, which rows are disabled and why. The columns
-/// are the ones DESIGN.md section 4 says identify and gate a server, in that
-/// order, and a column with nothing in it is a `-` rather than an empty field
-/// so that every line has the same number of fields.
+/// are the ones that identify and gate a server, in that order, and a column
+/// with nothing in it is a `-` rather than an empty field so that every line
+/// has the same number of fields.
 fn servers(config: &Path) -> Result<()> {
     let settings = Settings::load(config)?;
     logging::init(&settings.log)?;

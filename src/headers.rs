@@ -13,12 +13,12 @@
 //!
 //! Everything here is pure. No clock is read, no socket is touched and no
 //! task is spawned: time arrives as [`Micros`] arguments taken where the
-//! bytes arrived (DESIGN.md section 4), and the I/O belongs to the session
-//! (`session.rs`) and the run loop. A tracker driven by its caller's clock
-//! is a tracker a test can run a week of blocks through in a millisecond,
-//! and -- more to the point -- one that cannot accidentally stamp an
-//! observation with the time it was *processed* rather than the time it
-//! arrived, which is the one error this whole crate is built to avoid.
+//! bytes arrived, and the I/O belongs to the session (`session.rs`) and the
+//! run loop. A tracker driven by its caller's clock is a tracker a test can
+//! run a week of blocks through in a millisecond, and -- more to the point --
+//! one that cannot accidentally stamp an observation with the time it was
+//! *processed* rather than the time it arrived, which is the one error this
+//! whole crate is built to avoid.
 //!
 //! Three things come out of it, in the shape the rest of the crate needs:
 //!
@@ -28,8 +28,8 @@
 //!   cannot answer from its own columns: was this server contradicting
 //!   itself (`reorg`), and was anyone ahead of it with this block.
 //! - [`Tracker::open_window`] says whether the chain is currently split and
-//!   at which heights, which is what puts every session into the divergence
-//!   polling of DESIGN.md section 5 step 6.
+//!   at which heights, which is what puts every session into divergence
+//!   polling.
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -386,17 +386,17 @@ impl Tracker {
     /// Forgets what this server last announced, because a new connection to
     /// it has been made.
     ///
-    /// DESIGN.md section 5 step 4: the reply to `blockchain.headers.subscribe`
-    /// is whatever the server's tip happened to be when we connected, so it
-    /// is never evidence that the server changed its mind. Without this, a
-    /// server that restarted behind where we last saw it would be recorded as
-    /// having reorged when all it did was reconnect.
+    /// The reply to `blockchain.headers.subscribe` is whatever the server's
+    /// tip happened to be when we connected, so it is never evidence that the
+    /// server changed its mind. Without this, a server that restarted behind
+    /// where we last saw it would be recorded as having reorged when all it
+    /// did was reconnect.
     ///
     /// With `sessions_per_server > 1` the history belongs to the server and
     /// not to the connection, so the second session's handshake clears the
     /// first session's memory too. That costs one unflagged reorg in the
     /// window between a reconnect and the next block, and buys a `reorg`
-    /// column that means what DESIGN.md says it means -- the server changed
+    /// column that means what it is supposed to mean -- the server changed
     /// its mind -- for the much more common single-session case.
     pub fn session_started(&mut self, server_id: i64) {
         self.servers.remove(&server_id);
@@ -569,9 +569,8 @@ impl Tracker {
         self.blocks.len()
     }
 
-    /// DESIGN.md section 4: `reorg` is set when the announced `prev_hash` is
-    /// not this server's own hash at `height - 1`, or when the height did not
-    /// increase.
+    /// `reorg` is set when the announced `prev_hash` is not this server's own
+    /// hash at `height - 1`, or when the height did not increase.
     ///
     /// Two cases are not reorgs even though the rule read literally would
     /// make them one, and both are about the absence of evidence rather than
