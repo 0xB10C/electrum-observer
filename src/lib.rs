@@ -10,6 +10,7 @@
 //! into which table -- and `PLAN.md` is the order the modules arrive in.
 
 pub mod dial;
+pub mod discovery;
 pub mod endpoint;
 pub mod fdlimit;
 pub mod headers;
@@ -83,3 +84,14 @@ pub const TARGET_SEEDS: &str = "seeds";
 /// say about themselves: a server advertising fifty peers in a shape nobody
 /// else uses leaves no row behind at all.
 pub const TARGET_PROBES: &str = "probes";
+
+/// Discovery: which advertised peers became servers, and which did not fit.
+///
+/// Its own target because what it says is about the shape of the run rather
+/// than about any one connection -- how the monitored set grew, when it
+/// stopped growing because `discovery.max_servers` was reached, and which
+/// rows of a peer list were unreadable. At `info` it says only that new
+/// servers were found; `discovery: debug` is what names every skipped row,
+/// which is the level to run at when a peer list yields fewer servers than
+/// it should.
+pub const TARGET_DISCOVERY: &str = "discovery";
