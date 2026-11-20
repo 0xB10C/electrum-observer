@@ -9,6 +9,7 @@
 //! `DESIGN.md` is the authority on behaviour -- what is collected, why, and
 //! into which table -- and `PLAN.md` is the order the modules arrive in.
 
+pub mod dial;
 pub mod endpoint;
 pub mod fdlimit;
 pub mod headers;
@@ -52,3 +53,13 @@ pub const TARGET_STORE: &str = "store";
 /// can do that are neither an answer nor a disconnection, and that a session
 /// otherwise never sees.
 pub const TARGET_JSONRPC: &str = "jsonrpc";
+
+/// Opening connections: what a name resolved to, what was dialed, and what
+/// certificate came back.
+///
+/// Its own target because a dial is the one phase that fails for reasons
+/// outside this process -- a name that stopped resolving, a port that started
+/// refusing, a handshake that no longer completes -- and `dial: debug` is
+/// how an operator tells "the server is gone" from "our resolver is". The
+/// certificate is named by its fingerprint and never by its bytes.
+pub const TARGET_DIAL: &str = "dial";
