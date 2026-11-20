@@ -11,6 +11,7 @@
 
 pub mod endpoint;
 pub mod fdlimit;
+pub mod headers;
 pub mod jsonrpc;
 pub mod logging;
 pub mod settings;
