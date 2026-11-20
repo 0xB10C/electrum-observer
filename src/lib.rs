@@ -22,6 +22,7 @@ pub mod session;
 pub mod settings;
 pub mod shutdown;
 pub mod store;
+pub mod tor;
 
 pub use endpoint::{Endpoint, Host, Network, Transport};
 pub use settings::Settings;

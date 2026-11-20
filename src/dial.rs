@@ -35,10 +35,12 @@
 //! read is stored by its hash and its bytes with the parsed columns null,
 //! for the same reason.
 //!
-//! Tor is a seam here and arrives in step 8 of PLAN.md: an [`OnionDialer`]
-//! is whatever opens a stream to an onion name, and with none installed an
-//! onion endpoint fails as [`DialError::TorUnavailable`] rather than being
-//! dialed over the clearnet.
+//! Tor is a seam here and is filled by [`crate::tor`]: an [`OnionDialer`] is
+//! whatever opens a stream to a name, and with none installed an onion
+//! endpoint fails as [`DialError::TorUnavailable`] rather than being dialed
+//! over the clearnet. `tor.route_clearnet` installs a second one with
+//! [`Dialer::with_clearnet_via`], and then the clearnet endpoints go through
+//! Tor as well and this module opens no sockets of its own at all.
 
 use std::collections::hash_map::RandomState;
 use std::fmt;
@@ -137,11 +139,14 @@ pub struct Dialed {
     /// The connection itself, ready for the JSON-RPC client.
     pub stream: BoxStream,
     /// The address actually connected to. `None` for an onion stream, which
-    /// has no IP address at either end of it.
+    /// has no IP address at either end of it, and `None` for every stream
+    /// under `tor.route_clearnet`: the exit connects and does not say to
+    /// what, so even a literal endpoint has no address this process observed.
     pub remote_ip: Option<IpAddr>,
     /// The lookup this attempt used. `None` when there was none: an IP
-    /// literal is dialed as it is written, and an onion name is resolved by
-    /// Tor rather than by us.
+    /// literal is dialed as it is written, an onion name is resolved by Tor
+    /// rather than by us, and under `tor.route_clearnet` the exit does the
+    /// resolving and answers with a stream rather than with records.
     pub dns: Option<DnsResult>,
     /// What the TLS handshake presented and negotiated, for an `s` port.
     pub tls: Option<TlsInfo>,
@@ -268,9 +273,12 @@ pub struct Dialer {
     /// Built once; cloned per TLS dial so that each handshake gets a
     /// certificate verifier of its own to capture into.
     tls: ClientConfig,
-    /// `None` until step 8 installs arti, and then an onion endpoint is
-    /// [`DialError::TorUnavailable`].
+    /// `None` unless [`crate::tor`] bootstrapped, and then an onion endpoint
+    /// is [`DialError::TorUnavailable`].
     onion: Option<OnionDialer>,
+    /// `Some` only for `tor.route_clearnet`, and then every clearnet
+    /// endpoint goes through it instead of through a socket of ours.
+    clearnet: Option<OnionDialer>,
 }
 
 impl Dialer {
@@ -286,14 +294,34 @@ impl Dialer {
             resolver: resolver(&settings.dns)?,
             tls: client_config(),
             onion: None,
+            clearnet: None,
         })
     }
 
-    /// Installs the Tor seam, which is what step 8 of PLAN.md does with a
-    /// bootstrapped arti client.
+    /// Installs the Tor seam, which is what [`crate::tor::TorHandle`] fills
+    /// with a bootstrapped arti client.
     #[must_use]
     pub fn with_onion(mut self, onion: OnionDialer) -> Self {
         self.onion = Some(onion);
+        self
+    }
+
+    /// Sends clearnet endpoints through Tor too, for `tor.route_clearnet`.
+    ///
+    /// The same seam as [`with_onion`](Self::with_onion) and a second
+    /// installation of it rather than a flag on the first, because the two
+    /// are different `StreamPrefs` -- an onion dial is a rendezvous and a
+    /// clearnet dial is an exit -- and the dialer should not have to know
+    /// that, only which of the two to call.
+    ///
+    /// What the setting costs is in the rows: the exit does the connecting
+    /// and, for a hostname, the resolving, so a connection made this way has
+    /// no `remote_ip` and no `dns_resolutions` row. That, and a circuit's
+    /// latency on every timing collected, is why it is off by default
+    /// (DESIGN.md section 9).
+    #[must_use]
+    pub fn with_clearnet_via(mut self, clearnet: OnionDialer) -> Self {
+        self.clearnet = Some(clearnet);
         self
     }
 
@@ -334,17 +362,24 @@ impl Dialer {
     /// they exist, and the alternative is a connection whose `tls_cert_id` is
     /// null for no reason a reader of the table could guess.
     async fn open(&self, endpoint: &Endpoint) -> Result<Dialed, DialError> {
-        let opened = match &endpoint.host {
-            Host::Onion(name) => self.open_onion(name, endpoint.port).await?,
-            Host::Name(name) => self.open_name(name, endpoint.port).await?,
-            Host::Ipv4(address) => {
-                self.open_address(IpAddr::V4(*address), endpoint.port)
-                    .await?
-            }
-            Host::Ipv6(address) => {
-                self.open_address(IpAddr::V6(*address), endpoint.port)
-                    .await?
-            }
+        let opened = match (&self.clearnet, clearnet_target(&endpoint.host)) {
+            // `tor.route_clearnet`: the three clearnet arms below are
+            // replaced by one circuit, and the onion arm is not touched --
+            // an onion name goes through the onion seam whatever this
+            // setting says, because the two are different preferences.
+            (Some(via), Some(target)) => self.open_through(via, target, endpoint.port).await?,
+            _ => match &endpoint.host {
+                Host::Onion(name) => self.open_onion(name, endpoint.port).await?,
+                Host::Name(name) => self.open_name(name, endpoint.port).await?,
+                Host::Ipv4(address) => {
+                    self.open_address(IpAddr::V4(*address), endpoint.port)
+                        .await?
+                }
+                Host::Ipv6(address) => {
+                    self.open_address(IpAddr::V6(*address), endpoint.port)
+                        .await?
+                }
+            },
         };
         let (stream, tls) = match endpoint.transport {
             Transport::Tcp => (opened.stream, None),
@@ -407,16 +442,33 @@ impl Dialer {
             tracing::debug!(target: TARGET, %name, "no tor: the onion endpoint is not dialed");
             return Err(DialError::TorUnavailable);
         };
-        tracing::debug!(target: TARGET, %name, port, "dialing through tor");
-        let stream = onion(name.to_owned(), port).await.map_err(DialError::Tor)?;
+        self.open_through(onion, name.to_owned(), port).await
+    }
+
+    /// One target through a Tor seam, whichever of the two it is.
+    ///
+    /// Shared by the onion dial and by `tor.route_clearnet`, because what is
+    /// recorded is the same either way: a stream, and two columns that stay
+    /// empty because the circuit did the part they would have described.
+    async fn open_through(
+        &self,
+        via: &OnionDialer,
+        target: String,
+        port: u16,
+    ) -> Result<Opened, DialError> {
+        tracing::debug!(target: TARGET, %target, port, "dialing through tor");
+        let stream = via(target, port).await.map_err(DialError::Tor)?;
         Ok(Opened {
             stream,
-            // A circuit has no address of the service's at this end of it,
-            // and reporting the rendezvous point's would be a plausible
-            // looking lie.
+            // A circuit has no address of the far end at this end of it, and
+            // reporting the rendezvous point's -- or, for a clearnet target,
+            // whatever the exit resolved and did not tell us -- would be a
+            // plausible looking lie.
             remote_ip: None,
-            // Nor a lookup: the descriptor fetch is Tor's and is not a set of
-            // A and AAAA records.
+            // Nor a lookup: an onion descriptor fetch is Tor's and is not a
+            // set of A and AAAA records, and a clearnet name routed this way
+            // is resolved by the exit, which answers with a stream and not
+            // with records.
             dns: None,
             connected_at: SystemTime::now(),
         })
@@ -589,6 +641,26 @@ fn choose(addresses: &[IpAddr]) -> Option<&IpAddr> {
     }
     let index = RandomState::new().hash_one(0u8) as usize % addresses.len();
     addresses.get(index)
+}
+
+/// What a clearnet host goes to Tor as, for `tor.route_clearnet`.
+///
+/// `None` for an onion name, which is not what the setting is about: an onion
+/// endpoint goes through the onion seam whether clearnet is routed or not.
+/// A literal address goes as it is written and a name goes unresolved, so
+/// that the exit does the lookup -- resolving it here would publish to our own
+/// resolver exactly the list of servers the setting exists to hide, and the
+/// records would then not be the ones the connection used anyway.
+fn clearnet_target(host: &Host) -> Option<String> {
+    match host {
+        Host::Onion(_) => None,
+        // Not `Host`'s `Display`, which brackets an IPv6 address for the
+        // canonical `[::1]:50002` form: arti parses the host on its own and
+        // takes the port beside it, so brackets would be part of the name.
+        Host::Name(name) => Some(name.clone()),
+        Host::Ipv4(address) => Some(address.to_string()),
+        Host::Ipv6(address) => Some(address.to_string()),
+    }
 }
 
 /// The name to put in the SNI extension and to hand the verifier.
@@ -832,6 +904,20 @@ mod tests {
     /// configuration file gets.
     fn dialer() -> Dialer {
         Dialer::new(&Settings::default()).expect("the system resolver configuration is readable")
+    }
+
+    /// The same dialer with a one-second connect timeout instead of the
+    /// default twenty.
+    ///
+    /// For the tests whose subject is *which* route was taken. If the route
+    /// under test is not taken, what happens instead is a TCP connect to an
+    /// address reserved for documentation, which nothing answers for -- and
+    /// twenty seconds of that is a test that reads as a hang rather than as
+    /// a failure, both to a reader and to `cargo mutants`.
+    fn quick_dialer() -> Dialer {
+        let mut settings = Settings::default();
+        settings.timeouts.connect_secs = 1;
+        Dialer::new(&settings).expect("the system resolver configuration is readable")
     }
 
     fn endpoint(text: &str) -> Endpoint {
@@ -1202,6 +1288,151 @@ mod tests {
 
         assert_eq!(error.as_str(), "tor");
         assert!(error.to_string().contains("no descriptor"), "{error}");
+    }
+
+    /// A seam that records what it was asked for and hands back a stream
+    /// saying "tor", which is how the tests below tell a circuit from a
+    /// socket.
+    fn recording_seam(seen: Arc<Mutex<Vec<(String, u16)>>>) -> OnionDialer {
+        Box::new(move |host, port| {
+            seen.lock().expect("not poisoned").push((host, port));
+            Box::pin(async move {
+                let (ours, theirs) = tokio::io::duplex(64);
+                tokio::spawn(async move {
+                    let mut theirs = theirs;
+                    theirs.write_all(b"tor").await.expect("the write lands");
+                });
+                Ok(Box::new(ours) as BoxStream)
+            })
+        })
+    }
+
+    /// `tor.route_clearnet`: a clearnet endpoint goes through the circuit and
+    /// not through a socket, the name goes to the exit unresolved, and the
+    /// two columns the circuit swallowed are null.
+    ///
+    /// The name is one nothing here can resolve, so a dialer that fell back
+    /// to a socket would fail rather than quietly pass.
+    #[tokio::test]
+    async fn route_clearnet_sends_a_clearnet_endpoint_through_tor() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+
+        let mut dialed = quick_dialer()
+            .with_clearnet_via(recording_seam(Arc::clone(&seen)))
+            .dial(&endpoint("tcp://electrum.example.invalid:50001"))
+            .await
+            .expect("the circuit opens the stream");
+
+        assert_eq!(
+            *seen.lock().expect("not poisoned"),
+            vec![("electrum.example.invalid".to_owned(), 50001)],
+            "the name went to the exit unresolved",
+        );
+        assert_eq!(dialed.remote_ip, None, "the exit did the connecting");
+        assert_eq!(dialed.dns, None, "the exit did the resolving");
+
+        let mut said = [0u8; 3];
+        dialed.stream.read_exact(&mut said).await.expect("it reads");
+        assert_eq!(&said, b"tor");
+    }
+
+    /// A literal address goes through the circuit as it is written -- without
+    /// the brackets the canonical form puts round an IPv6 one, because arti
+    /// takes the host and the port separately.
+    #[tokio::test]
+    async fn route_clearnet_passes_a_literal_address_as_written() {
+        for (written, expected) in [
+            ("tcp://192.0.2.1:50001", "192.0.2.1"),
+            ("tcp://[2001:db8::1]:50001", "2001:db8::1"),
+        ] {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let dialed = quick_dialer()
+                .with_clearnet_via(recording_seam(Arc::clone(&seen)))
+                .dial(&endpoint(written))
+                .await
+                .expect("the circuit opens the stream");
+
+            assert_eq!(
+                *seen.lock().expect("not poisoned"),
+                vec![(expected.to_owned(), 50001)],
+                "{written}",
+            );
+            assert_eq!(dialed.remote_ip, None, "{written}: the exit connected");
+        }
+    }
+
+    /// With both seams installed an onion endpoint still goes through the
+    /// onion one. They are different `StreamPrefs` -- a rendezvous and an
+    /// exit -- so sending an onion name down the clearnet seam would ask an
+    /// exit for a name it cannot reach.
+    #[tokio::test]
+    async fn route_clearnet_leaves_onion_endpoints_to_the_onion_seam() {
+        let (onion_seen, clearnet_seen) = (
+            Arc::new(Mutex::new(Vec::new())),
+            Arc::new(Mutex::new(Vec::new())),
+        );
+        let name = "p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcm32kvxb2jmbbggl6j3ad.onion";
+
+        quick_dialer()
+            .with_onion(recording_seam(Arc::clone(&onion_seen)))
+            .with_clearnet_via(recording_seam(Arc::clone(&clearnet_seen)))
+            .dial(&endpoint(&format!("tcp://{name}:50001")))
+            .await
+            .expect("the onion seam opens the stream");
+
+        assert_eq!(
+            *onion_seen.lock().expect("not poisoned"),
+            vec![(name.to_owned(), 50001)]
+        );
+        assert!(clearnet_seen.lock().expect("not poisoned").is_empty());
+    }
+
+    /// Without the setting the clearnet seam is not installed and a clearnet
+    /// endpoint is dialed from a socket of ours, with the lookup recorded:
+    /// the default is off and this is what off looks like.
+    #[tokio::test]
+    async fn without_route_clearnet_a_clearnet_endpoint_uses_a_socket() {
+        let (listener, address) = listener().await;
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("a connection arrives");
+            let mut stream = stream;
+            stream.write_all(b"tcp").await.expect("the write lands");
+        });
+
+        let mut dialed = dialer()
+            .with_onion(recording_seam(Arc::new(Mutex::new(Vec::new()))))
+            .dial(&endpoint(&format!("tcp://127.0.0.1:{}", address.port())))
+            .await
+            .expect("the socket connects");
+
+        assert_eq!(dialed.remote_ip, Some(address.ip()));
+        let mut said = [0u8; 3];
+        dialed.stream.read_exact(&mut said).await.expect("it reads");
+        assert_eq!(&said, b"tcp");
+    }
+
+    /// Only an onion host is kept out of the clearnet route; every other kind
+    /// has a target, and an IPv6 one has no brackets on it.
+    #[test]
+    fn only_an_onion_host_has_no_clearnet_target() {
+        assert_eq!(
+            clearnet_target(&Host::Name("electrum.example".to_owned())),
+            Some("electrum.example".to_owned())
+        );
+        assert_eq!(
+            clearnet_target(&Host::Ipv4(Ipv4Addr::new(192, 0, 2, 1))),
+            Some("192.0.2.1".to_owned())
+        );
+        assert_eq!(
+            clearnet_target(&Host::Ipv6("2001:db8::1".parse().expect("a literal"))),
+            Some("2001:db8::1".to_owned())
+        );
+        assert_eq!(
+            clearnet_target(&Host::Onion(
+                "p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcm32kvxb2jmbbggl6j3ad.onion".to_owned()
+            )),
+            None
+        );
     }
 
     /// A name that does not exist is a `dns` failure, and the resolver's own

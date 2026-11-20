@@ -5,6 +5,29 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+# Tor, in process, so that no `tor` daemon and no SOCKS proxy has to exist on
+# a host the NixOS module deploys this to (DESIGN.md section 9). The feature
+# selection is crawler's and for crawler's reasons: arti calls its defaults
+# non-additive and the default set pulls in native-tls, which would be a
+# second TLS stack beside the rustls below, so the defaults are off and the
+# five that are wanted are named. `compression` is one of the defaults and is
+# kept, so the directory is still fetched compressed. `static-sqlite` compiles
+# the amalgamation arti's directory cache wants into the binary rather than
+# asking the host for a libsqlite3, which is the choice `rusqlite`'s `bundled`
+# already makes below. `onion-service-client` is the half of arti this crate
+# exists for. `rustls` resolves to the same rustls 0.23 as below, so the graph
+# has one TLS implementation and one crypto provider in it -- `ring`, because
+# that is the only provider feature anything here turns on, which matters:
+# arti builds its client configuration from the process-wide default provider
+# rather than from one passed in, and rustls installs that from the crate
+# features only when exactly one of them is on.
+arti-client = { version = "0.48", default-features = false, features = [
+  "tokio",
+  "rustls",
+  "compression",
+  "onion-service-client",
+  "static-sqlite",
+] }
 # `Chain::genesis_hash`, which every connection checks `server.features`
 # against (DESIGN.md section 5). Also the 80-byte header parsing of step 9,
 # which is the other reason it is here rather than a table of five hashes.
@@ -31,7 +54,12 @@ libc = "0.2"
 # whichever SQLite the host carries: WAL and `ON CONFLICT` upserts are both
 # version-sensitive, and a collector that writes a different file on a
 # different machine is not one database.
-rusqlite = { version = "0.42", features = ["bundled"] }
+#
+# Held at 0.40 rather than the newest: `libsqlite3-sys` declares
+# `links = "sqlite3"`, so a dependency graph may contain exactly one of it,
+# and arti's directory cache is a rusqlite database too -- `tor-dirmgr` 0.48
+# asks for `>=0.36, <0.41`. 0.40 is the newest version both can have.
+rusqlite = { version = "0.40", features = ["bundled"] }
 # TLS for the `s` ports. The `ring` provider rather than the default
 # aws-lc-rs: aws-lc-rs wants cmake and a C toolchain at build time, which a
 # `nix build` of this crate would have to carry for no gain, and a graph that
