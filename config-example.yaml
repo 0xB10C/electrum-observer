@@ -113,6 +113,6 @@ tor:
 
 log:
   level: info
-  # Per-target overrides, as target: level. Targets: main, store, jsonrpc,
-  # dial, seeds, probes, discovery, session.
+  # Per-target overrides, as target: level. Targets: main, run, store,
+  # jsonrpc, dial, seeds, probes, discovery, session.
   targets: {}

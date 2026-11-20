@@ -6,9 +6,10 @@
 //! library, so that the end-to-end tests can drive the collector in process
 //! against mock servers (DESIGN.md section 3).
 //!
-//! Three subcommands. `run` sets everything up and returns, because `run()`
-//! itself arrives with step 14 of `PLAN.md`; `import` fills the `servers`
-//! table from the sources of `seeds`, and `servers` prints what is in it.
+//! Three subcommands. `run` sets all of that up and hands the configuration
+//! and the stop flag to [`electrum_observer::run::run`], which is the
+//! collector; `import` fills the `servers` table from the sources of
+//! `seeds`, and `servers` prints what is in it.
 //!
 //! `import` and `servers` are the pair that makes an import checkable: one
 //! writes rows, the other says which rows are there and where each came from,
@@ -23,7 +24,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use electrum_observer::store::Store;
-use electrum_observer::{Endpoint, Settings, Shutdown, TARGET_MAIN, fdlimit, logging, seeds};
+use electrum_observer::{Endpoint, Settings, Shutdown, TARGET_MAIN, fdlimit, logging, run, seeds};
 use tracing::{debug, info};
 
 /// The arguments that change per invocation. Everything else is in the
@@ -139,7 +140,9 @@ async fn start(cli: Cli) -> Result<()> {
 
 /// Everything that can fail before the collecting begins, in the order it has
 /// to happen: read the configuration, start logging, make room for the
-/// sessions, arm the stop signal.
+/// sessions, arm the stop signal. Then [`electrum_observer::run::run`], which
+/// returns when that signal has arrived and everything observed has been
+/// written.
 async fn run(config: &Path) -> Result<()> {
     // Loading validates, so a level that is not a level is a configuration
     // error here rather than a filter that quietly drops lines below.
@@ -154,10 +157,11 @@ async fn run(config: &Path) -> Result<()> {
         bail!(reason);
     }
 
-    // Nothing watches the flag yet. Installed anyway, and here rather than in
-    // the collector, because the handlers have to be registered before the
-    // work starts (see `Shutdown::install`).
-    let _shutdown = Shutdown::install().context("installing the signal handlers")?;
+    // Installed here rather than in the collector because the handlers have
+    // to be registered before the work starts: a SIGTERM arriving while the
+    // database is being opened must flip the flag the sessions are about to
+    // watch, not kill the process (see `Shutdown::install`).
+    let shutdown = Shutdown::install().context("installing the signal handlers")?;
 
     // The database and the cap, because those are what an operator checks
     // first in a log that is otherwise about servers: whether the daemon is
@@ -171,7 +175,8 @@ async fn run(config: &Path) -> Result<()> {
         max_sessions = settings.max_sessions(),
         "electrum-observer starting"
     );
-    Ok(())
+
+    run::run(settings, shutdown).await
 }
 
 /// `import`: read a seed source and write what it names into `servers`.

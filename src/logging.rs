@@ -37,6 +37,12 @@ pub fn init(settings: &LogSettings) -> Result<()> {
     let filter =
         EnvFilter::try_new(&directives).with_context(|| format!("log levels {directives:?}"))?;
     tracing_subscriber::fmt()
+        // Stderr, not the default stdout: `import` and `servers` print their
+        // result to stdout for a pipe to read, and a log line arriving in
+        // the middle of it would be one of the fields. It is also where a
+        // daemon's log belongs -- systemd journals both streams, and a
+        // `run` whose output is being read at all is being read by a person.
+        .with_writer(std::io::stderr)
         // The target is the module name the config file names, so a line can
         // be traced back to the setting that let it through.
         .with_target(true)

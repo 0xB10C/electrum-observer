@@ -41,6 +41,7 @@ use bitcoin::blockdata::constants::genesis_block;
 use serde::Deserialize;
 
 use crate::endpoint::Endpoint;
+use crate::store::sha256_hex;
 
 /// The chain being observed.
 ///
@@ -127,6 +128,20 @@ pub struct Settings {
     pub dns: DnsSettings,
     pub tor: TorSettings,
     pub log: LogSettings,
+
+    /// The sha256 of the configuration file's text, as `meta.config_sha256`
+    /// keeps it.
+    ///
+    /// Not a key of the file: `#[serde(skip)]`, so a file that names it is
+    /// the unknown-key error every other typo is, and [`Settings::load`]
+    /// stamps it from the bytes it just read. It travels on the settings
+    /// rather than as a second argument to [`crate::run::run`] because it is
+    /// a fact about the configuration and the collector already takes the
+    /// configuration. `None` is a `Settings` that came from nowhere -- a
+    /// test's, or the defaults -- and then nothing is written, because a
+    /// `meta` row would claim a run was configured by a file.
+    #[serde(skip)]
+    pub config_sha256: Option<String>,
 }
 
 /// One entry of `overrides`: an endpoint and how many sessions it gets.
@@ -358,11 +373,16 @@ impl Settings {
     pub fn load(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let settings =
+        let mut settings =
             Self::from_yaml(&text).with_context(|| format!("parsing {}", path.display()))?;
         settings
             .validate()
             .with_context(|| format!("checking {}", path.display()))?;
+        // The text as it was read rather than the settings as they were
+        // parsed: `meta.config_sha256` is there to say which file produced a
+        // database, and two files that differ only in a comment are two
+        // files.
+        settings.config_sha256 = Some(sha256_hex(text.as_bytes()));
         Ok(settings)
     }
 
@@ -530,6 +550,7 @@ impl Default for Settings {
             dns: DnsSettings::default(),
             tor: TorSettings::default(),
             log: LogSettings::default(),
+            config_sha256: None,
         }
     }
 }
@@ -631,7 +652,29 @@ mod tests {
     /// other is exactly the mistake this catches.
     #[test]
     fn the_example_file_is_exactly_the_defaults() {
-        assert_eq!(example(), Settings::default());
+        let loaded = example();
+        assert_eq!(
+            loaded.config_sha256,
+            Some(sha256_hex(
+                std::fs::read_to_string(Path::new(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/config-example.yaml"
+                )))
+                .expect("the example file reads")
+                .as_bytes()
+            )),
+            "loading stamps the hash of the text it read",
+        );
+        // Everything else whole, with the one field the file cannot name
+        // taken back off: a key added to the example and not to `Default`,
+        // or the other way round, is exactly what this catches.
+        assert_eq!(
+            Settings {
+                config_sha256: None,
+                ..loaded
+            },
+            Settings::default(),
+        );
     }
 
     /// And the defaults are a configuration the daemon would run with, which

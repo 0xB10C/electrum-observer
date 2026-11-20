@@ -60,6 +60,7 @@ use tracing::{debug, warn};
 
 use crate::TARGET_STORE;
 use crate::endpoint::Endpoint;
+use crate::headers::KnownBlock;
 
 /// The schema this build writes and reads, as it is stored in
 /// `meta.schema_version`.
@@ -583,6 +584,74 @@ impl Store {
     /// Every known server, enabled or not, oldest first.
     pub fn servers(&self) -> Result<Vec<ServerRow>> {
         self.query_servers(&format!("{SELECT_SERVER} ORDER BY id"))
+    }
+
+    /// The highest `limit` blocks of the book, highest first.
+    ///
+    /// What [`crate::headers::Tracker::with_known_blocks`] is seeded with at
+    /// startup, and the reason it exists: a hash this database already holds
+    /// is not news, so a restart during or after a chain split must not see
+    /// the first announcement of each branch as a new second hash at a
+    /// height, arm a divergence window and poll every server about a fork
+    /// that was over yesterday.
+    ///
+    /// By height rather than by `first_seen_at`, because what the tracker
+    /// prunes by is height, and the rows worth seeding are the ones near the
+    /// tip whatever order they were observed in. A row whose hashes are not
+    /// hashes -- which only a hand-edited database or another writer can
+    /// produce -- is counted and left out rather than failing the startup:
+    /// the seed is an optimisation, and the collection is worth more than
+    /// the consistency of a row nothing here wrote.
+    pub fn recent_blocks(&self, limit: usize) -> Result<Vec<KnownBlock>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let conn = self.conn();
+        let mut statement = conn
+            .prepare(
+                "SELECT hash, height, prev_hash, first_seen_at, first_seen_server_id
+                   FROM blocks ORDER BY height DESC LIMIT ?1",
+            )
+            .context("preparing the known block query")?;
+        let rows = statement
+            .query_map(params![limit], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Micros>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .context("running the known block query")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("reading a block row")?;
+
+        let mut blocks = Vec::with_capacity(rows.len());
+        for (hash, height, prev_hash, first_seen_at, first_seen_server_id) in rows {
+            match known_block(
+                &hash,
+                height,
+                prev_hash.as_deref(),
+                first_seen_at,
+                first_seen_server_id,
+            ) {
+                Some(block) => blocks.push(block),
+                // Named rather than counted: a row like this cannot have
+                // come from a header this crate wrote, so the only thing to
+                // do with the line is go and look at the row it names.
+                None => warn!(
+                    target: TARGET_STORE,
+                    hash = %hash,
+                    height,
+                    "a block row that no header could have written was not seeded",
+                ),
+            }
+        }
+        debug!(
+            target: TARGET_STORE,
+            blocks = blocks.len(),
+            "the block book was read back",
+        );
+        Ok(blocks)
     }
 
     /// The id the next `connections` row will have.
@@ -1130,6 +1199,30 @@ fn schema_version(conn: &Connection) -> Result<i64> {
             .parse()
             .with_context(|| format!("the schema version {text:?} is not a number")),
     }
+}
+
+/// One `blocks` row as [`crate::headers::Tracker`] takes it, or `None` when
+/// the row is not one a header could have produced.
+///
+/// The three ways that can happen are a hash that is not 32 bytes of
+/// hexadecimal, a missing `prev_hash` -- the column is nullable and a header
+/// always has a parent, so a null is a row from somewhere else -- and a
+/// negative height. None of them is reachable through [`Event::Header`];
+/// they are the shapes the schema allows and this crate does not write.
+fn known_block(
+    hash: &str,
+    height: i64,
+    prev_hash: Option<&str>,
+    first_seen_at: Micros,
+    first_seen_server_id: i64,
+) -> Option<KnownBlock> {
+    Some(KnownBlock {
+        hash: hash.parse().ok()?,
+        height: u64::try_from(height).ok()?,
+        prev_hash: prev_hash?.parse().ok()?,
+        first_seen_at,
+        first_seen_server_id,
+    })
 }
 
 /// The largest id in a table, or 0 when it is empty: what the counter for
@@ -2084,6 +2177,95 @@ mod tests {
         assert_eq!(
             one::<i64>(&store, "SELECT first_seen_server_id FROM blocks"),
             first_server,
+        );
+    }
+
+    /// A hash of one repeated byte, in the 64 hexadecimal characters a real
+    /// one has: `recent_blocks` parses what it reads, so a test about it
+    /// cannot use the short strings the other tests here write.
+    fn block_hash(byte: u8) -> String {
+        format!("{byte:02x}").repeat(32)
+    }
+
+    /// The seed the tracker takes at startup: the highest rows, highest
+    /// first, cut to the limit, and without the rows no header could have
+    /// written.
+    ///
+    /// The ordering is the point of the limit -- what is worth seeding is
+    /// the blocks near the tip -- and the two skipped rows are the shapes
+    /// `blocks` allows and this crate never writes, which must cost a count
+    /// rather than the startup.
+    #[tokio::test]
+    async fn the_recent_blocks_are_the_highest_ones_a_header_could_have_written() {
+        let (_dir, store) = temp_store();
+        let (server_id, connection_id) = server_and_connection(&store).await;
+        let header = |height: i64, hash: String, prev_hash: Option<String>| Event::Header {
+            connection_id,
+            server_id,
+            at: Micros(height),
+            kind: HeaderKind::Notification,
+            height,
+            hash,
+            prev_hash,
+            header_hex: "aabb".to_string(),
+            reorg: false,
+        };
+
+        write(
+            &store,
+            vec![
+                header(100, block_hash(1), Some(block_hash(0))),
+                header(102, block_hash(3), Some(block_hash(2))),
+                header(101, block_hash(2), Some(block_hash(1))),
+                // Not a hash, and a header with no parent: both are rows
+                // the schema takes and the collector cannot produce. Below
+                // the readable ones, so that the limit is what the first
+                // assertion is about and the skipping is what the second is.
+                header(99, "00beef".to_string(), Some(block_hash(0))),
+                header(98, block_hash(5), None),
+            ],
+        )
+        .await;
+
+        let recent = store.recent_blocks(2).expect("the block book reads back");
+        assert_eq!(
+            recent,
+            vec![
+                KnownBlock {
+                    hash: block_hash(3).parse().expect("a hash"),
+                    height: 102,
+                    prev_hash: block_hash(2).parse().expect("a hash"),
+                    first_seen_at: Micros(102),
+                    first_seen_server_id: server_id,
+                },
+                KnownBlock {
+                    hash: block_hash(2).parse().expect("a hash"),
+                    height: 101,
+                    prev_hash: block_hash(1).parse().expect("a hash"),
+                    first_seen_at: Micros(101),
+                    first_seen_server_id: server_id,
+                },
+            ],
+            "the two highest readable blocks, highest first",
+        );
+
+        let heights: Vec<u64> = store
+            .recent_blocks(100)
+            .expect("the block book reads back")
+            .into_iter()
+            .map(|block| block.height)
+            .collect();
+        assert_eq!(
+            heights,
+            vec![102, 101, 100],
+            "the unreadable rows are left out rather than failing the read",
+        );
+        assert!(
+            store
+                .recent_blocks(0)
+                .expect("the block book reads back")
+                .is_empty(),
+            "a limit of nothing seeds nothing",
         );
     }
 

@@ -17,6 +17,7 @@ pub mod headers;
 pub mod jsonrpc;
 pub mod logging;
 pub mod probes;
+pub mod run;
 pub mod seeds;
 pub mod session;
 pub mod settings;
@@ -42,6 +43,19 @@ pub use shutdown::Shutdown;
 /// Public, unlike crawler's, because here the binary logs too: it is what
 /// says the process started.
 pub const TARGET_MAIN: &str = "main";
+
+/// The collector as a whole: what was started, what it is holding open, and
+/// what it waited for on the way out.
+///
+/// Its own target because what it says belongs to no server and to no
+/// connection: how many sessions were opened at startup and how many onion
+/// servers were left alone for want of Tor, the status line every minute,
+/// and the sessions the shutdown is still waiting for. `run: debug` adds a
+/// line per server whose sessions were opened, which is how an operator
+/// tells a server that is not being watched from one that is being watched
+/// and cannot be reached -- a distinction `session` cannot make, because a
+/// server it never heard of writes nothing under it.
+pub const TARGET_RUN: &str = "run";
 
 /// The database: the schema, the writer task and the few direct queries.
 ///
