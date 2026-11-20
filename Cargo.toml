@@ -68,7 +68,11 @@ tempfile = "3"
 # Also the request-timeout tests of `jsonrpc`. A dev-dependency and nothing
 # else: the feature replaces the clock, which is the last thing a collector
 # of timestamps should ship with.
-tokio = { version = "1", features = ["test-util"] }
+# `net` is for the mock Electrum server of `tests/common/mock_server.rs`,
+# which binds a real loopback socket because what the session tests exercise
+# is a session that dials an address. The library itself gains `net` in step
+# 7 with `dial`; until then only the tests open sockets.
+tokio = { version = "1", features = ["net", "test-util"] }
 
 [features]
 # Turns checks that only warn into hard failures. Nothing reads it yet.
