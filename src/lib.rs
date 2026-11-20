@@ -9,10 +9,12 @@
 //! `DESIGN.md` is the authority on behaviour -- what is collected, why, and
 //! into which table -- and `PLAN.md` is the order the modules arrive in.
 
+pub mod endpoint;
 pub mod fdlimit;
 pub mod logging;
 pub mod shutdown;
 
+pub use endpoint::{Endpoint, Host, Network, Transport};
 pub use shutdown::Shutdown;
 
 /// The binary itself: startup, the descriptor limit and the stop signal.

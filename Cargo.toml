@@ -8,6 +8,10 @@ anyhow = "1"
 # The descriptor limit, raised at startup because every monitored server
 # holds its connection open for the lifetime of the process (see `fdlimit`).
 libc = "0.2"
+# `Endpoint` is serialised as its canonical string into the config file and
+# the database, so the derive belongs to the type itself and not only to the
+# settings module that reads it.
+serde = { version = "1", features = ["derive"] }
 # `macros` and `time` are for the tests as much as for the binary: the
 # runtime itself is built by hand in `main`, but `#[tokio::test]` and the
 # bounded waits in `shutdown` need them.
@@ -20,6 +24,13 @@ tokio = { version = "1", features = [
 ] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+# A serde format to round trip `Endpoint` through in the tests. JSON
+# rather than the YAML the configuration uses, because what is tested is
+# that the value is one string in whatever format, and JSON says so in
+# one line.
+serde_json = "1"
 
 [features]
 # Turns checks that only warn into hard failures. Nothing reads it yet.
