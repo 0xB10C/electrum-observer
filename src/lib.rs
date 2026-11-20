@@ -12,17 +12,19 @@
 pub mod endpoint;
 pub mod fdlimit;
 pub mod logging;
+pub mod settings;
 pub mod shutdown;
 
 pub use endpoint::{Endpoint, Host, Network, Transport};
+pub use settings::Settings;
 pub use shutdown::Shutdown;
 
 /// The binary itself: startup, the descriptor limit and the stop signal.
 ///
 /// Tracing targets are stable names rather than module paths, which move
 /// whenever a file does, so that one phase of a run can be turned up on its
-/// own once the configuration can ask for it (`log` in
-/// `config-example.yaml`, from step 3). Each constant appears with the module
+/// own from the configuration (`log.targets` in `config-example.yaml`, which
+/// lists the names). Each constant appears with the module
 /// that logs under it; this one is not a module at all but the handful of
 /// lines a process runs before and after the collection, and they log under a
 /// name of their own so that `main: debug` says what startup did without

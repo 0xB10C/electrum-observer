@@ -1,0 +1,115 @@
+# Example configuration for electrum-observer.
+#
+# Every key has a default and every default is the value shown here, so this
+# file is what the daemon does when it is handed an empty one. A key the
+# daemon does not know is an error rather than a line that is ignored.
+#
+# Durations are whole seconds. DESIGN.md is the authority on what each of
+# these decides.
+
+# Which chain the servers are expected to be on. Decides the genesis hash
+# `server.features` is checked against: a server on another chain is disabled
+# rather than ignored, because its headers would otherwise go into the
+# cross-server block book.
+# mainnet | testnet3 | testnet4 | signet | regtest
+chain: mainnet
+
+# The SQLite database everything is written to. Opened in WAL mode, so it can
+# be read with sqlite3 or DuckDB while the daemon is running.
+database: /var/lib/electrum-observer/observer.sqlite
+
+# Optional file of endpoints, one per line, in either "ssl://host:port" or
+# "host:port:s" form, read at startup. null is the ordinary case: servers come
+# from `electrum-observer import` and from discovery, both of which write to
+# the database. A path that is named has to exist.
+servers_file: null
+
+# How many connections are opened to each server. More than one is the noise
+# floor: two connections to one server announcing the same block N
+# milliseconds apart is the resolution limit of the whole measurement, and
+# without it a 50 ms delta between two different servers means nothing. It is
+# also a connection per server per step, so `overrides` is the way to raise it
+# for the few endpoints an experiment is about.
+sessions_per_server: 1
+
+# Per-endpoint session counts, overriding sessions_per_server. Both keys are
+# required; the endpoint is normalised to its canonical form.
+#   - { endpoint: "ssl://tool.sh:50002", sessions: 3 }
+overrides: []
+
+timeouts:
+  # From the start of the dial to a usable connection.
+  connect_secs: 20
+  # How long one request may go unanswered. Bounds a probe and not the
+  # connection: a server that never answers one request keeps its
+  # subscription and is recorded as having failed that probe.
+  request_secs: 30
+
+# A session that ends reconnects after min_secs, doubling to max_secs, with
+# jitter. The jitter is not politeness about load -- it is so that a restart
+# does not make every session reconnect in lockstep and turn the first-seen
+# timings of the next few blocks into a measurement of our own scheduler.
+reconnect:
+  min_secs: 10
+  max_secs: 3600
+
+# How often each probe set goes out.
+cadence:
+  # server.ping, which keeps ElectrumX from dropping the connection as idle
+  # and whose round trip is the baseline every header delta is read against.
+  ping_secs: 120
+  # The fee set: histogram, estimatefee targets and their edge cases,
+  # relayfee, mempool.get_info.
+  fees_secs: 300
+  # The identity set: features, banner, donation address, peers.
+  identity_secs: 3600
+  # The fingerprint set: deliberately malformed requests whose verbatim error
+  # strings differ between implementations. Rare because ElectrumX charges a
+  # connection for what it asks and disconnects one that costs too much.
+  fingerprint_secs: 86400
+
+# When two different hashes are seen at one height, every session polls
+# blockchain.block.header for that height until the window closes. A
+# subscription says when a server announces a tip; only polling says when it
+# switches during a reorg.
+divergence:
+  window_secs: 1800
+  poll_secs: 10
+
+discovery:
+  # Whether server.peers.subscribe results become servers of our own. Off
+  # still records the advertisements: who advertises whom is its own graph.
+  enabled: true
+  # The ceiling on enabled servers, first come first served. Past it a server
+  # is recorded with enabled = false and disabled_reason = 'cap'. Peer lists
+  # are unbounded and partly stale, and every enabled server costs a
+  # descriptor, a connection and its share of the write rate.
+  max_servers: 600
+
+dns:
+  # Upstream resolver for hickory, as "host:port". null uses the system
+  # resolver configuration. Every A and AAAA of every lookup is recorded
+  # whichever is used.
+  upstream: null
+
+tor:
+  # Whether onion servers are dialed at all. Tor is in process through arti;
+  # no tor daemon and no SOCKS proxy has to exist on the host.
+  enabled: true
+  # How long the bootstrap may take before Tor is given up on. Clearnet
+  # sessions do not wait for it and start immediately.
+  bootstrap_timeout_secs: 300
+  # Where arti keeps its guards and its directory cache. null puts it next to
+  # the database, at <database dir>/arti, so the daemon has one state
+  # directory rather than two.
+  state_dir: null
+  # Whether clearnet connections go through Tor as well. Useful if the
+  # observer should not be trivially identifiable by the servers it watches,
+  # and a circuit's latency and jitter on every timing collected, which is
+  # why it is off.
+  route_clearnet: false
+
+log:
+  level: info
+  # Per-target overrides, as target: level. Targets: main.
+  targets: {}

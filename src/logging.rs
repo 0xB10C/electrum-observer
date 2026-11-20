@@ -2,10 +2,9 @@
 //!
 //! Copied from crawler's `src/logging.rs`, which took the formatter from
 //! p2p-observer: a log these projects can be read with one set of habits is
-//! worth more than a formatter of our own. One thing changed -- the argument.
-//! Crawler passes its `LogSettings` and builds the filter directives from
-//! them; this crate has no settings module yet (step 3 of `PLAN.md`), so
-//! [`init`] takes the directives themselves.
+//! worth more than a formatter of our own. Nothing is changed but the names
+//! -- crawler's `log.default` is `log.level` here -- so the diff against the
+//! original stays readable.
 //!
 //! Levels reach the `EnvFilter` from the configuration rather than from the
 //! environment: nothing reads `RUST_LOG`, because the config file is the
@@ -19,20 +18,24 @@ use std::fmt::Write as _;
 use anyhow::{Context, Result};
 use tracing_subscriber::EnvFilter;
 
-/// Installs the subscriber the given filter directives ask for.
+use crate::settings::LogSettings;
+
+/// Installs the subscriber the configured levels ask for.
 ///
 /// Separate from the collector because a subscriber is process-wide and can
 /// only be installed once: the binary does it at startup, and a test either
 /// does it itself or does without. Failing rather than panicking on a second
 /// call, so that a test binary that installs one twice says so.
 ///
-/// `directives` is an `EnvFilter` string -- `"info"`, or
-/// `"info,session=trace"`. Step 3 replaces it with `LogSettings`, which is
-/// the same string assembled from the config file.
-// step 3: takes LogSettings
-pub fn init(directives: &str) -> Result<()> {
+/// The settings become one `EnvFilter` string -- `"info"`, or
+/// `"info,session=trace"` -- through
+/// [`LogSettings::to_filter_string`]; `Settings::validate` has already
+/// refused a level that is not one, so a failure here is the second
+/// subscriber rather than the config file.
+pub fn init(settings: &LogSettings) -> Result<()> {
+    let directives = settings.to_filter_string();
     let filter =
-        EnvFilter::try_new(directives).with_context(|| format!("log levels {directives:?}"))?;
+        EnvFilter::try_new(&directives).with_context(|| format!("log levels {directives:?}"))?;
     tracing_subscriber::fmt()
         // The target is the module name the config file names, so a line can
         // be traced back to the setting that let it through.
@@ -207,12 +210,17 @@ mod tests {
     /// second one would be testing a different thing than it says.
     #[test]
     fn the_subscriber_is_installed_once_from_the_configured_levels() {
-        let error = init("session=chatty").expect_err("a level that is not a level");
+        let mut broken = LogSettings::default();
+        broken
+            .targets
+            .insert("session".to_string(), "chatty".to_string());
+        let error = init(&broken).expect_err("a level that is not a level");
         assert!(format!("{error:#}").contains("chatty"), "{error:#}");
 
-        init("info").expect("the first subscriber installs");
+        let settings = LogSettings::default();
+        init(&settings).expect("the first subscriber installs");
         assert!(
-            init("info").is_err(),
+            init(&settings).is_err(),
             "a second subscriber would silently replace nothing"
         );
     }
